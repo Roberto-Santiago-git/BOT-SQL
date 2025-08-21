@@ -1,656 +1,960 @@
-=== POLICY_BUNDLE v1.0 ===
-[policy_oracle.json]
+/* === VALIDATION PACKET (POLICY_BUNDLE + CODE) === */
+/* POLICY_BUNDLE_JSON_START */
 {
-  "policy_version": "1.0.1",
-  "engine": "oracle-19c",
-  "mode": "static_code_scan",
-  "owner_schemas": [
-    "CPPGS"
-  ],
-  "approved_tablespaces": {
-    "tables": [
-      "TBS_DESP_01_DAT"
-    ],
-    "indexes": [
-      "TBS_DESP_01_IDX"
-    ]
-  },
-  "reporting": {
-    "fail_on_severity": [
-      "BLOCKER"
-    ],
-    "score_weights": {
-      "BLOCKER": 100,
-      "MAJOR": 20,
-      "MINOR": 5
-    },
-    "approval_max_score": 20,
-    "verdict_labels": {
-      "pass": "CUMPLE",
-      "fail": "NO CUMPLE"
-    }
-  },
-  "file_match": [
-    "**/*.sql",
-    "**/*.ddl",
-    "**/*.pkg",
-    "**/*.pks",
-    "**/*.pkb"
-  ],
-  "rules": [
-    {
-      "id": "BAN_NOLOGGING",
-      "description": "Prohíbe NOLOGGING en DDL.",
-      "type": "regex_forbidden",
-      "pattern": "\\bNOLOGGING\\b",
-      "flags": "is",
-      "scope": [
-        "ddl.table",
-        "ddl.index"
+  "policy_version": "1.0-bundle",
+  "generated_at": "2025-08-21T01:09:44.747445Z",
+  "policies": {
+    "oracle": {
+      "policy_version": "1.0.1",
+      "engine": "oracle-19c",
+      "mode": "static_code_scan",
+      "owner_schemas": [
+        "CPPGS"
       ],
-      "severity": "BLOCKER",
-      "message": "NOLOGGING prohibido en PROD. Usa LOGGING.",
-      "autofix": {
-        "type": "replace",
-        "search": "\\bNOLOGGING\\b",
-        "replace": "LOGGING"
-      }
-    },
-    {
-      "id": "ENFORCE_TABLESPACE_TABLES",
-      "description": "Tablas al TBS de datos aprobado.",
-      "type": "requires_when",
-      "when": "CREATE\\s+TABLE\\b",
-      "require": "TABLESPACE\\s+(TBS_DESP_01_DAT)\\b",
-      "flags": "is",
-      "scope": [
-        "ddl.table"
-      ],
-      "severity": "BLOCKER",
-      "message": "TABLESPACE de tablas debe ser TBS_DESP_01_DAT."
-    },
-    {
-      "id": "ENFORCE_TABLESPACE_INDEXES",
-      "description": "Índices al TBS de índices aprobado.",
-      "type": "requires_when",
-      "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\b",
-      "require": "TABLESPACE\\s+(TBS_DESP_01_IDX)\\b",
-      "flags": "is",
-      "scope": [
-        "ddl.index"
-      ],
-      "severity": "BLOCKER",
-      "message": "TABLESPACE de índices debe ser TBS_DESP_01_IDX."
-    },
-    {
-      "id": "BAN_COMPRESS_TABLE",
-      "description": "COMPRESS en tablas requiere waiver.",
-      "type": "regex_forbidden",
-      "pattern": "\\bCREATE\\s+TABLE\\b[\\s\\S]*?\\bCOMPRESS\\b",
-      "flags": "is",
-      "scope": [
-        "ddl.table"
-      ],
-      "severity": "MAJOR",
-      "message": "COMPRESS en tablas requiere excepción documentada."
-    },
-    {
-      "id": "REQUIRE_PK_NAMING",
-      "description": "PRIMARY KEY con prefijo PK_.",
-      "type": "requires_when",
-      "when": "PRIMARY\\s+KEY\\b",
-      "require": "CONSTRAINT\\s+PK_[A-Z0-9_]+\\b",
-      "flags": "is",
-      "scope": [
-        "ddl.table"
-      ],
-      "severity": "MAJOR",
-      "message": "Usa nombre de constraint PRIMARY KEY con prefijo PK_."
-    },
-    {
-      "id": "REQUIRE_UK_NAMING",
-      "description": "UNIQUE KEY con prefijo UK_.",
-      "type": "requires_when",
-      "when": "ADD\\s+CONSTRAINT\\s+[A-Z0-9_]+\\s+UNIQUE\\b",
-      "require": "ADD\\s+CONSTRAINT\\s+UK_[A-Z0-9_]+\\s+UNIQUE\\b",
-      "flags": "is",
-      "scope": [
-        "ddl.table"
-      ],
-      "severity": "MINOR",
-      "message": "Usa nombre de constraint UNIQUE con prefijo UK_."
-    },
-    {
-      "id": "REQUIRE_INDEX_NAMING",
-      "description": "Índices deben iniciar con IDX_ o PK_.",
-      "type": "regex_forbidden",
-      "pattern": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+(?![A-Z0-9_]+\\.(?:IDX_|PK_))[A-Z0-9_.]+",
-      "flags": "is",
-      "scope": [
-        "ddl.index"
-      ],
-      "severity": "MAJOR",
-      "message": "Nombra índices como IDX_* (o PK_* si soporta PK)."
-    },
-    {
-      "id": "REQUIRE_SCHEMA_QUALIFIED_DDL",
-      "description": "DDL calificado con esquema.",
-      "type": "regex_forbidden",
-      "pattern": "CREATE\\s+(?:TABLE|VIEW|SEQUENCE|TRIGGER|INDEX)\\s+(?!CPPGS\\.)[A-Z0-9_]+",
-      "flags": "is",
-      "scope": [
-        "ddl.table",
-        "ddl.index",
-        "ddl.other"
-      ],
-      "severity": "MAJOR",
-      "message": "Califica objetos con esquema (p.ej., CPPGS.TABLA)."
-    },
-    {
-      "id": "BAN_SELECT_STAR",
-      "description": "Prohíbe SELECT *.",
-      "type": "regex_forbidden",
-      "pattern": "\\bSELECT\\s*\\*\\b",
-      "flags": "is",
-      "scope": [
-        "dml",
-        "plsql"
-      ],
-      "severity": "MAJOR",
-      "message": "No uses SELECT *. Lista columnas explícitas."
-    },
-    {
-      "id": "BAN_PARALLEL_HINTS",
-      "description": "Prohíbe paralelismo forzado.",
-      "type": "regex_forbidden_any",
-      "patterns": [
-        "/\\*\\+\\s*PARALLEL\\b",
-        "\\bALTER\\s+SESSION\\s+.*\\bPARALLEL\\b"
-      ],
-      "flags": "is",
-      "scope": [
-        "dml",
-        "plsql",
-        "session"
-      ],
-      "severity": "BLOCKER",
-      "message": "Paralelismo forzado no permitido en apps OLTP."
-    },
-    {
-      "id": "REQUIRE_TABLE_COMMENT",
-      "description": "Cada tabla nueva debe tener COMMENT ON TABLE.",
-      "type": "requires_when_group",
-      "group": [
-        {
-          "when": "CREATE\\s+TABLE\\s+(CPPGS\\.[A-Z0-9_]+)",
-          "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';"
+      "approved_tablespaces": {
+        "tables": [
+          "TBS_DESP_01_DAT"
+        ],
+        "indexes": [
+          "TBS_DESP_01_IDX"
+        ]
+      },
+      "reporting": {
+        "fail_on_severity": [
+          "BLOCKER"
+        ],
+        "score_weights": {
+          "BLOCKER": 100,
+          "MAJOR": 20,
+          "MINOR": 5
+        },
+        "approval_max_score": 20,
+        "verdict_labels": {
+          "pass": "CUMPLE",
+          "fail": "NO CUMPLE"
         }
-      ],
-      "flags": "is",
-      "scope": [
-        "ddl.table"
-      ],
-      "severity": "MINOR",
-      "message": "Agrega COMMENT ON TABLE con descripción."
-    },
-    {
-      "id": "BAN_ORDER_BY_POSITION",
-      "description": "Prohíbe ORDER BY por número.",
-      "type": "regex_forbidden",
-      "pattern": "\\bORDER\\s+BY\\s+\\d+(\\s*,\\s*\\d+)*\\b",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Usa columnas explícitas en ORDER BY."
-    },
-    {
-      "id": "REQUIRE_WHERE_UPDATE",
-      "description": "UPDATE debe tener WHERE.",
-      "type": "requires_when",
-      "when": "\\bUPDATE\\b",
-      "require": "\\bWHERE\\b",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Evita updates masivos sin WHERE."
-    },
-    {
-      "id": "REQUIRE_WHERE_DELETE",
-      "description": "DELETE debe tener WHERE.",
-      "type": "requires_when",
-      "when": "\\bDELETE\\b",
-      "require": "\\bWHERE\\b",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Evita deletes masivos sin WHERE."
-    },
-    {
-      "id": "BAN_INSERT_NO_COLUMN_LIST",
-      "description": "INSERT sin lista de columnas.",
-      "type": "regex_forbidden_any",
-      "patterns": [
-        "\\bINSERT\\s+INTO\\s+[A-Z0-9_.]+\\s+VALUES\\b",
-        "\\bINSERT\\s+INTO\\s+[A-Z0-9_.]+\\s+SELECT\\b"
-      ],
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Incluye lista de columnas en INSERT."
-    },
-    {
-      "id": "BAN_WHEN_OTHERS_NULL",
-      "description": "WHEN OTHERS THEN NULL.",
-      "type": "regex_forbidden",
-      "pattern": "\\bWHEN\\s+OTHERS\\s+THEN\\s+NULL\\b",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Registra y/o propaga el error; no lo silencies."
-    },
-    {
-      "id": "REQUIRE_AUDIT_PKG_IN_SP",
-      "description": "Bitácora corporativa en SP/PKG.",
-      "type": "requires_when",
-      "when": "CREATE\\s+OR\\s+REPLACE\\s+(PROCEDURE|PACKAGE)\\b",
-      "require": "\\bPKG_BITACORA_PROCESO\\.",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Llama a PKG_BITACORA_PROCESO en inicio/fin y on-error."
-    },
-    {
-      "id": "ENFORCE_TABLE_NAMING",
-      "description": "Prefijos de tabla TBL_/TSTG_.",
-      "type": "regex_forbidden",
-      "pattern": "CREATE\\s+TABLE\\s+(?:[A-Z0-9_]+\\.)?(?!TBL_|TSTG_)[A-Z0-9_]+",
-      "flags": "is",
-      "severity": "MAJOR",
-      "message": "Usa prefijos TBL_ o TSTG_."
-    },
-    {
-      "id": "ENFORCE_PACKAGE_NAMING",
-      "description": "Package con PKG_.",
-      "type": "regex_forbidden",
-      "pattern": "CREATE\\s+OR\\s+REPLACE\\s+PACKAGE\\s+(?:[A-Z0-9_]+\\.)?(?!PKG_)[A-Z0-9_]+",
-      "flags": "is",
-      "severity": "MAJOR",
-      "message": "Usa prefijo PKG_."
-    },
-    {
-      "id": "ENFORCE_PROC_NAMING",
-      "description": "Procedure con SP_.",
-      "type": "regex_forbidden",
-      "pattern": "CREATE\\s+OR\\s+REPLACE\\s+PROCEDURE\\s+(?:[A-Z0-9_]+\\.)?(?!SP_)[A-Z0-9_]+",
-      "flags": "is",
-      "severity": "MINOR",
-      "message": "Usa prefijo SP_."
-    },
-    {
-      "id": "ENFORCE_FUNC_NAMING",
-      "description": "Function con F_.",
-      "type": "regex_forbidden",
-      "pattern": "CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+(?:[A-Z0-9_]+\\.)?(?!F_)[A-Z0-9_]+",
-      "flags": "is",
-      "severity": "MINOR",
-      "message": "Usa prefijo F_."
-    },
-    {
-      "id": "BAN_LOOSE_ATTRIBUTES",
-      "description": "Atributos DDL sueltos.",
-      "type": "regex_forbidden",
-      "pattern": "^(?!.*\\b(CREATE|ALTER)\\b).*(\\bCOMPRESS\\b|\\bNOLOGGING\\b|\\bTABLESPACE\\s+[A-Z0-9_]+)",
-      "flags": "im",
-      "severity": "BLOCKER",
-      "message": "COMPRESS/NOLOGGING/TABLESPACE solo dentro de CREATE/ALTER."
-    },
-    {
-      "id": "REQUIRE_COMPRESS_FOR_MULTI_COL_INDEX",
-      "description": "Índice multicolumna requiere COMPRESS n (n=cols−1).",
-      "type": "requires_when",
-      "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX[\\s\\S]*?\\([\\s\\S]*?,[\\s\\S]*?\\)",
-      "require": "\\bCOMPRESS\\s+\\d+\\b",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Agrega COMPRESS n en índices compuestos."
-    }
-  ]
-}
-[policy_ipc.json]
-{
-  "policy_version": "1.0.0",
-  "engine": "ipc-mixed",
-  "mode": "static_config_scan",
-  "reporting": {
-    "fail_on_severity": [
-      "BLOCKER"
-    ],
-    "score_weights": {
-      "BLOCKER": 100,
-      "MAJOR": 20,
-      "MINOR": 5
-    },
-    "approval_max_score": 20,
-    "verdict_labels": {
-      "pass": "CUMPLE",
-      "fail": "NO CUMPLE"
-    }
-  },
-  "targets": [
-    {
-      "id": "airflow_py",
+      },
       "file_match": [
-        "**/dags/**/*.py"
+        "**/*.sql",
+        "**/*.ddl",
+        "**/*.pkg",
+        "**/*.pks",
+        "**/*.pkb"
       ],
       "rules": [
         {
-          "id": "AF_REQUIRE_DEFAULT_ARGS",
-          "description": "default_args con retries>=2, retry_delay y email_on_failure.",
+          "id": "BAN_NOLOGGING",
+          "description": "Prohíbe NOLOGGING en DDL.",
+          "type": "regex_forbidden",
+          "pattern": "\\bNOLOGGING\\b",
+          "flags": "is",
+          "scope": [
+            "ddl.table",
+            "ddl.index"
+          ],
+          "severity": "BLOCKER",
+          "message": "NOLOGGING prohibido en PROD. Usa LOGGING.",
+          "autofix": {
+            "type": "replace",
+            "search": "\\bNOLOGGING\\b",
+            "replace": "LOGGING"
+          }
+        },
+        {
+          "id": "ENFORCE_TABLESPACE_TABLES",
+          "description": "Tablas al TBS de datos aprobado.",
+          "type": "requires_when",
+          "when": "CREATE\\s+TABLE\\b",
+          "require": "TABLESPACE\\s+(TBS_DESP_01_DAT)\\b",
+          "flags": "is",
+          "scope": [
+            "ddl.table"
+          ],
+          "severity": "BLOCKER",
+          "message": "TABLESPACE de tablas debe ser TBS_DESP_01_DAT."
+        },
+        {
+          "id": "ENFORCE_TABLESPACE_INDEXES",
+          "description": "Índices al TBS de índices aprobado.",
+          "type": "requires_when",
+          "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\b",
+          "require": "TABLESPACE\\s+(TBS_DESP_01_IDX)\\b",
+          "flags": "is",
+          "scope": [
+            "ddl.index"
+          ],
+          "severity": "BLOCKER",
+          "message": "TABLESPACE de índices debe ser TBS_DESP_01_IDX."
+        },
+        {
+          "id": "BAN_COMPRESS_TABLE",
+          "description": "COMPRESS en tablas requiere waiver.",
+          "type": "regex_forbidden",
+          "pattern": "\\bCREATE\\s+TABLE\\b[\\s\\S]*?\\bCOMPRESS\\b",
+          "flags": "is",
+          "scope": [
+            "ddl.table"
+          ],
+          "severity": "MAJOR",
+          "message": "COMPRESS en tablas requiere excepción documentada."
+        },
+        {
+          "id": "REQUIRE_PK_NAMING",
+          "description": "PRIMARY KEY con prefijo PK_.",
+          "type": "requires_when",
+          "when": "PRIMARY\\s+KEY\\b",
+          "require": "CONSTRAINT\\s+PK_[A-Z0-9_]+\\b",
+          "flags": "is",
+          "scope": [
+            "ddl.table"
+          ],
+          "severity": "MAJOR",
+          "message": "Usa nombre de constraint PRIMARY KEY con prefijo PK_."
+        },
+        {
+          "id": "REQUIRE_UK_NAMING",
+          "description": "UNIQUE KEY con prefijo UK_.",
+          "type": "requires_when",
+          "when": "ADD\\s+CONSTRAINT\\s+[A-Z0-9_]+\\s+UNIQUE\\b",
+          "require": "ADD\\s+CONSTRAINT\\s+UK_[A-Z0-9_]+\\s+UNIQUE\\b",
+          "flags": "is",
+          "scope": [
+            "ddl.table"
+          ],
+          "severity": "MINOR",
+          "message": "Usa nombre de constraint UNIQUE con prefijo UK_."
+        },
+        {
+          "id": "REQUIRE_INDEX_NAMING",
+          "description": "Índices deben iniciar con IDX_ o PK_.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+(?![A-Z0-9_]+\\.(?:IDX_|PK_))[A-Z0-9_.]+",
+          "flags": "is",
+          "scope": [
+            "ddl.index"
+          ],
+          "severity": "MAJOR",
+          "message": "Nombra índices como IDX_* (o PK_* si soporta PK)."
+        },
+        {
+          "id": "REQUIRE_SCHEMA_QUALIFIED_DDL",
+          "description": "DDL calificado con esquema.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+(?:TABLE|VIEW|SEQUENCE|TRIGGER|INDEX)\\s+(?!CPPGS\\.)[A-Z0-9_]+",
+          "flags": "is",
+          "scope": [
+            "ddl.table",
+            "ddl.index",
+            "ddl.other"
+          ],
+          "severity": "MAJOR",
+          "message": "Califica objetos con esquema (p.ej., CPPGS.TABLA)."
+        },
+        {
+          "id": "BAN_SELECT_STAR",
+          "description": "Prohíbe SELECT *.",
+          "type": "regex_forbidden",
+          "pattern": "\\bSELECT\\s*\\*\\b",
+          "flags": "is",
+          "scope": [
+            "dml",
+            "plsql"
+          ],
+          "severity": "MAJOR",
+          "message": "No uses SELECT *. Lista columnas explícitas."
+        },
+        {
+          "id": "BAN_PARALLEL_HINTS",
+          "description": "Prohíbe paralelismo forzado.",
+          "type": "regex_forbidden_any",
+          "patterns": [
+            "/\\*\\+\\s*PARALLEL\\b",
+            "\\bALTER\\s+SESSION\\s+.*\\bPARALLEL\\b"
+          ],
+          "flags": "is",
+          "scope": [
+            "dml",
+            "plsql",
+            "session"
+          ],
+          "severity": "BLOCKER",
+          "message": "Paralelismo forzado no permitido en apps OLTP."
+        },
+        {
+          "id": "REQUIRE_TABLE_COMMENT",
+          "description": "Cada tabla nueva debe tener COMMENT ON TABLE.",
           "type": "requires_when_group",
           "group": [
             {
-              "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}",
-              "require_template": "retries\\s*:\\s*[2-9]"
+              "when": "CREATE\\s+TABLE\\s+(CPPGS\\.[A-Z0-9_]+)",
+              "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';"
+            }
+          ],
+          "flags": "is",
+          "scope": [
+            "ddl.table"
+          ],
+          "severity": "MINOR",
+          "message": "Agrega COMMENT ON TABLE con descripción."
+        },
+        {
+          "id": "BAN_ORDER_BY_POSITION",
+          "description": "Prohíbe ORDER BY por número.",
+          "type": "regex_forbidden",
+          "pattern": "\\bORDER\\s+BY\\s+\\d+(\\s*,\\s*\\d+)*\\b",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Usa columnas explícitas en ORDER BY."
+        },
+        {
+          "id": "REQUIRE_WHERE_UPDATE",
+          "description": "UPDATE debe tener WHERE.",
+          "type": "requires_when",
+          "when": "\\bUPDATE\\b",
+          "require": "\\bWHERE\\b",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Evita updates masivos sin WHERE."
+        },
+        {
+          "id": "REQUIRE_WHERE_DELETE",
+          "description": "DELETE debe tener WHERE.",
+          "type": "requires_when",
+          "when": "\\bDELETE\\b",
+          "require": "\\bWHERE\\b",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Evita deletes masivos sin WHERE."
+        },
+        {
+          "id": "BAN_INSERT_NO_COLUMN_LIST",
+          "description": "INSERT sin lista de columnas.",
+          "type": "regex_forbidden_any",
+          "patterns": [
+            "\\bINSERT\\s+INTO\\s+[A-Z0-9_.]+\\s+VALUES\\b",
+            "\\bINSERT\\s+INTO\\s+[A-Z0-9_.]+\\s+SELECT\\b"
+          ],
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Incluye lista de columnas en INSERT."
+        },
+        {
+          "id": "BAN_WHEN_OTHERS_NULL",
+          "description": "WHEN OTHERS THEN NULL.",
+          "type": "regex_forbidden",
+          "pattern": "\\bWHEN\\s+OTHERS\\s+THEN\\s+NULL\\b",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Registra y/o propaga el error; no lo silencies."
+        },
+        {
+          "id": "REQUIRE_AUDIT_PKG_IN_SP",
+          "description": "Bitácora corporativa en SP/PKG.",
+          "type": "requires_when",
+          "when": "CREATE\\s+OR\\s+REPLACE\\s+(PROCEDURE|PACKAGE)\\b",
+          "require": "\\bPKG_BITACORA_PROCESO\\.",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Llama a PKG_BITACORA_PROCESO en inicio/fin y on-error."
+        },
+        {
+          "id": "ENFORCE_TABLE_NAMING",
+          "description": "Prefijos de tabla TBL_/TSTG_.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+TABLE\\s+(?:[A-Z0-9_]+\\.)?(?!TBL_|TSTG_)[A-Z0-9_]+",
+          "flags": "is",
+          "severity": "MAJOR",
+          "message": "Usa prefijos TBL_ o TSTG_."
+        },
+        {
+          "id": "ENFORCE_PACKAGE_NAMING",
+          "description": "Package con PKG_.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+OR\\s+REPLACE\\s+PACKAGE\\s+(?:[A-Z0-9_]+\\.)?(?!PKG_)[A-Z0-9_]+",
+          "flags": "is",
+          "severity": "MAJOR",
+          "message": "Usa prefijo PKG_."
+        },
+        {
+          "id": "ENFORCE_PROC_NAMING",
+          "description": "Procedure con SP_.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+OR\\s+REPLACE\\s+PROCEDURE\\s+(?:[A-Z0-9_]+\\.)?(?!SP_)[A-Z0-9_]+",
+          "flags": "is",
+          "severity": "MINOR",
+          "message": "Usa prefijo SP_."
+        },
+        {
+          "id": "ENFORCE_FUNC_NAMING",
+          "description": "Function con F_.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+(?:[A-Z0-9_]+\\.)?(?!F_)[A-Z0-9_]+",
+          "flags": "is",
+          "severity": "MINOR",
+          "message": "Usa prefijo F_."
+        },
+        {
+          "id": "BAN_LOOSE_ATTRIBUTES",
+          "description": "Atributos DDL sueltos.",
+          "type": "regex_forbidden",
+          "pattern": "^(?!.*\\b(CREATE|ALTER)\\b).*(\\bCOMPRESS\\b|\\bNOLOGGING\\b|\\bTABLESPACE\\s+[A-Z0-9_]+)",
+          "flags": "im",
+          "severity": "BLOCKER",
+          "message": "COMPRESS/NOLOGGING/TABLESPACE solo dentro de CREATE/ALTER."
+        },
+        {
+          "id": "REQUIRE_COMPRESS_FOR_MULTI_COL_INDEX",
+          "description": "Índice multicolumna requiere COMPRESS n (n=cols−1).",
+          "type": "requires_when",
+          "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX[\\s\\S]*?\\([\\s\\S]*?,[\\s\\S]*?\\)",
+          "require": "\\bCOMPRESS\\s+\\d+\\b",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Agrega COMPRESS n en índices compuestos."
+        }
+      ]
+    },
+    "ipc": {
+      "policy_version": "1.0.0",
+      "engine": "ipc-mixed",
+      "mode": "static_config_scan",
+      "reporting": {
+        "fail_on_severity": [
+          "BLOCKER"
+        ],
+        "score_weights": {
+          "BLOCKER": 100,
+          "MAJOR": 20,
+          "MINOR": 5
+        },
+        "approval_max_score": 20,
+        "verdict_labels": {
+          "pass": "CUMPLE",
+          "fail": "NO CUMPLE"
+        }
+      },
+      "targets": [
+        {
+          "id": "airflow_py",
+          "file_match": [
+            "**/dags/**/*.py"
+          ],
+          "rules": [
+            {
+              "id": "AF_REQUIRE_DEFAULT_ARGS",
+              "description": "default_args con retries>=2, retry_delay y email_on_failure.",
+              "type": "requires_when_group",
+              "group": [
+                {
+                  "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}",
+                  "require_template": "retries\\s*:\\s*[2-9]"
+                },
+                {
+                  "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}",
+                  "require_template": "retry_delay\\s*=|retry_delay\\s*:\\s*timedelta\\("
+                },
+                {
+                  "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}",
+                  "require_template": "email_on_failure\\s*:\\s*True"
+                }
+              ],
+              "flags": "is",
+              "severity": "MAJOR",
+              "message": "Configura retries/retry_delay/email_on_failure."
             },
             {
-              "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}",
-              "require_template": "retry_delay\\s*=|retry_delay\\s*:\\s*timedelta\\("
+              "id": "AF_BAN_CATCHUP_TRUE",
+              "description": "En PROD no hay backfill automático.",
+              "type": "requires_when",
+              "when": "DAG\\(",
+              "require": "catchup\\s*=\\s*False",
+              "flags": "is",
+              "severity": "BLOCKER",
+              "message": "Define catchup=False."
             },
             {
-              "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}",
-              "require_template": "email_on_failure\\s*:\\s*True"
+              "id": "AF_REQUIRE_DAGRUN_TIMEOUT",
+              "description": "dagrun_timeout obligatorio.",
+              "type": "requires_when",
+              "when": "DAG\\(",
+              "require": "dagrun_timeout\\s*=\\s*timedelta\\(",
+              "flags": "is",
+              "severity": "MAJOR",
+              "message": "Incluye dagrun_timeout."
+            },
+            {
+              "id": "AF_BAN_PLAINTEXT_CREDS",
+              "description": "Prohíbe credenciales en claro.",
+              "type": "regex_forbidden_any",
+              "patterns": [
+                "requests\\.(get|post|put|delete)\\([^\\)]*(Authorization|Bearer|Basic)\\s*:\\s*['\\\"][A-Za-z0-9._:-]+",
+                "password\\s*=\\s*['\\\"][^'\\\"]+['\\\"]",
+                "user(name)?\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+              ],
+              "flags": "is",
+              "severity": "BLOCKER",
+              "message": "Usa Connections/Secret Backend."
+            },
+            {
+              "id": "AF_BAN_XCOM_PII",
+              "description": "No PII en XCom.",
+              "type": "regex_forbidden",
+              "pattern": "xcom_push\\([^\\)]*(ssn|curp|rfc|card|cvv|clabe|telefono|email|direccion)",
+              "flags": "is",
+              "severity": "BLOCKER",
+              "message": "No envíes PII a XCom."
+            }
+          ]
+        },
+        {
+          "id": "adf_json",
+          "file_match": [
+            "**/adf/**/pipeline*.json",
+            "**/adf/**/linkedService*.json",
+            "**/adf/**/dataset*.json"
+          ],
+          "rules": [
+            {
+              "id": "ADF_REQUIRE_KEYVAULT",
+              "description": "LinkedServices deben usar Key Vault.",
+              "type": "requires_when",
+              "when": "\"type\":\\s*\"(AzureSqlDatabase|SqlServer|Oracle|AzureBlobStorage|AzureDataLakeStore|Sftp)\"",
+              "require": "\"typeProperties\"[\\s\\S]*?\"(connectionString|password|encryptedCredential)\":\\s*\\{\\s*\"type\":\\s*\"AzureKeyVaultSecretReference\"",
+              "flags": "is",
+              "severity": "BLOCKER",
+              "message": "Credenciales vía Key Vault."
+            },
+            {
+              "id": "ADF_BAN_PLAINTEXT_CONNECTION",
+              "description": "Prohíbe connectionString en claro.",
+              "type": "regex_forbidden",
+              "pattern": "\"connectionString\"\\s*:\\s*\"[^\"]+\"",
+              "flags": "is",
+              "severity": "BLOCKER",
+              "message": "Referencia secreto, no literal."
+            },
+            {
+              "id": "ADF_REQUIRE_RETRY",
+              "description": "Activities críticas requieren retry>=3.",
+              "type": "requires_when",
+              "when": "\"type\":\\s*\"(Copy|SqlServerStoredProcedure|ExecutePipeline|DatabricksNotebook)\"",
+              "require": "\"policy\"[\\s\\S]*?\"retry\":\\s*[3-9]",
+              "flags": "is",
+              "severity": "MAJOR",
+              "message": "Configura retries."
+            },
+            {
+              "id": "ADF_REQUIRE_DATASET_CLASSIFICATION",
+              "description": "Datasets con anotaciones de clasificación.",
+              "type": "requires_when",
+              "when": "\"type\":\\s*\"(Dataset|AzureBlobFSFile|DelimitedText|Parquet|Json)\"",
+              "require": "\"annotations\"\\s*:\\s*\\[\\s*\"(pii:masked|pii:none|restricted|public)\"",
+              "flags": "is",
+              "severity": "MINOR",
+              "message": "Incluye annotations pii:*."
+            }
+          ]
+        },
+        {
+          "id": "controlm",
+          "file_match": [
+            "**/controlm/**/*.json",
+            "**/controlm/**/*.xml"
+          ],
+          "rules": [
+            {
+              "id": "CTM_REQUIRE_TIMEWINDOW",
+              "description": "Jobs con ventana de ejecución.",
+              "type": "requires_when",
+              "when": "(?i)(Job|SMART_FOLDER)",
+              "require": "(?i)(TimeFrom|TimeTo|RunWindow|TimeZone)",
+              "flags": "is",
+              "severity": "MAJOR",
+              "message": "Define ventana de ejecución."
+            },
+            {
+              "id": "CTM_BAN_RUNAS_ADMIN",
+              "description": "Sin Administrator/ROOT.",
+              "type": "regex_forbidden",
+              "pattern": "(?i)(RunAs|User)\\s*[:=]\\s*(Administrator|root)",
+              "flags": "is",
+              "severity": "BLOCKER",
+              "message": "Principio de mínimo privilegio."
+            },
+            {
+              "id": "CTM_REQUIRE_RETRIES",
+              "description": "Reintentos configurados.",
+              "type": "requires_when",
+              "when": "(?i)(Job|Command)",
+              "require": "(?i)(AutoEdit|MaxRerun|Rerun)\\s*[:=]\\s*[1-9]",
+              "flags": "is",
+              "severity": "MAJOR",
+              "message": "Configura reintentos."
+            }
+          ]
+        }
+      ]
+    },
+    "powershell": {
+      "policy_version": "1.0.0",
+      "engine": "powershell",
+      "mode": "static_code_scan",
+      "reporting": {
+        "fail_on_severity": [
+          "BLOCKER"
+        ],
+        "score_weights": {
+          "BLOCKER": 100,
+          "MAJOR": 20,
+          "MINOR": 5
+        },
+        "approval_max_score": 20,
+        "verdict_labels": {
+          "pass": "CUMPLE",
+          "fail": "NO CUMPLE"
+        }
+      },
+      "file_match": [
+        "**/*.ps1",
+        "**/*.psm1"
+      ],
+      "rules": [
+        {
+          "id": "PS_REQUIRE_HEADER",
+          "description": "Help-based comments (.SYNOPSIS/.DESCRIPTION).",
+          "type": "requires_when_group",
+          "group": [
+            {
+              "when": "^[\\s\\S]{0,800}",
+              "require_template": "\\.SYNOPSIS"
+            },
+            {
+              "when": "^[\\s\\S]{0,800}",
+              "require_template": "\\.DESCRIPTION"
+            }
+          ],
+          "flags": "is",
+          "severity": "MINOR",
+          "message": "Incluye help-based comments."
+        },
+        {
+          "id": "PS_REQUIRE_STRICTMODE",
+          "description": "Set-StrictMode y errores fatales.",
+          "type": "requires_when_group",
+          "group": [
+            {
+              "when": "^[\\s\\S]*$",
+              "require_template": "Set-StrictMode\\s+-Version\\s+(Latest|3)"
+            },
+            {
+              "when": "^[\\s\\S]*$",
+              "require_template": "\\$ErrorActionPreference\\s*=\\s*'Stop'"
             }
           ],
           "flags": "is",
           "severity": "MAJOR",
-          "message": "Configura retries/retry_delay/email_on_failure."
+          "message": "Activa StrictMode y ErrorActionPreference='Stop'."
         },
         {
-          "id": "AF_BAN_CATCHUP_TRUE",
-          "description": "En PROD no hay backfill automático.",
-          "type": "requires_when",
-          "when": "DAG\\(",
-          "require": "catchup\\s*=\\s*False",
+          "id": "PS_REQUIRE_CMDLETBINDING",
+          "description": "Funciones avanzadas.",
+          "type": "requires_when_group",
+          "group": [
+            {
+              "when": "function\\s+[A-Za-z0-9_]+\\s*\\{",
+              "require_template": "\\[CmdletBinding\\(\\)\\]"
+            },
+            {
+              "when": "param\\s*\\(",
+              "require_template": "\\[Parameter\\("
+            }
+          ],
+          "flags": "is",
+          "severity": "MINOR",
+          "message": "Usa [CmdletBinding()] y [Parameter()]."
+        },
+        {
+          "id": "PS_BAN_INVOKE_EXPRESSION",
+          "description": "Prohíbe iex/Invoke-Expression.",
+          "type": "regex_forbidden",
+          "pattern": "(?i)(Invoke-Expression|\\biex\\b)",
           "flags": "is",
           "severity": "BLOCKER",
-          "message": "Define catchup=False."
+          "message": "No uses Invoke-Expression."
         },
         {
-          "id": "AF_REQUIRE_DAGRUN_TIMEOUT",
-          "description": "dagrun_timeout obligatorio.",
-          "type": "requires_when",
-          "when": "DAG\\(",
-          "require": "dagrun_timeout\\s*=\\s*timedelta\\(",
-          "flags": "is",
-          "severity": "MAJOR",
-          "message": "Incluye dagrun_timeout."
-        },
-        {
-          "id": "AF_BAN_PLAINTEXT_CREDS",
-          "description": "Prohíbe credenciales en claro.",
+          "id": "PS_BAN_DOWNLOADSTRING",
+          "description": "No descargar y ejecutar en caliente.",
           "type": "regex_forbidden_any",
           "patterns": [
-            "requests\\.(get|post|put|delete)\\([^\\)]*(Authorization|Bearer|Basic)\\s*:\\s*['\\\"][A-Za-z0-9._:-]+",
-            "password\\s*=\\s*['\\\"][^'\\\"]+['\\\"]",
-            "user(name)?\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+            "DownloadString\\(",
+            "Invoke-WebRequest\\([^\\)]*\\)\\s*\\|\\s*Invoke-Expression"
           ],
           "flags": "is",
           "severity": "BLOCKER",
-          "message": "Usa Connections/Secret Backend."
+          "message": "Riesgo de RCE."
         },
         {
-          "id": "AF_BAN_XCOM_PII",
-          "description": "No PII en XCom.",
+          "id": "PS_BAN_EXECUTIONPOLICY_BYPASS",
+          "description": "No modificar ExecutionPolicy.",
           "type": "regex_forbidden",
-          "pattern": "xcom_push\\([^\\)]*(ssn|curp|rfc|card|cvv|clabe|telefono|email|direccion)",
+          "pattern": "(?i)Set-ExecutionPolicy|ExecutionPolicy\\s+Bypass",
           "flags": "is",
           "severity": "BLOCKER",
-          "message": "No envíes PII a XCom."
-        }
-      ]
-    },
-    {
-      "id": "adf_json",
-      "file_match": [
-        "**/adf/**/pipeline*.json",
-        "**/adf/**/linkedService*.json",
-        "**/adf/**/dataset*.json"
-      ],
-      "rules": [
+          "message": "No cambies ExecutionPolicy en scripts."
+        },
         {
-          "id": "ADF_REQUIRE_KEYVAULT",
-          "description": "LinkedServices deben usar Key Vault.",
-          "type": "requires_when",
-          "when": "\"type\":\\s*\"(AzureSqlDatabase|SqlServer|Oracle|AzureBlobStorage|AzureDataLakeStore|Sftp)\"",
-          "require": "\"typeProperties\"[\\s\\S]*?\"(connectionString|password|encryptedCredential)\":\\s*\\{\\s*\"type\":\\s*\"AzureKeyVaultSecretReference\"",
+          "id": "PS_BAN_HARDCODED_CREDS",
+          "description": "Sin credenciales hardcodeadas.",
+          "type": "regex_forbidden_any",
+          "patterns": [
+            "ConvertTo-SecureString\\s+\"[^\"]+\"\\s+-AsPlainText\\s+-Force",
+            "Password\\s*=\\s*['\\\"][^'\\\"]+['\\\"]",
+            "-Credential\\s+\\(New-Object\\s+System.Management.Automation.PSCredential\\s*\\(\\s*['\\\"][^'\\\"]+['\\\"],\\s*['\\\"][^'\\\"]+['\\\"]\\s*\\)\\)",
+            "ConnectionString\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+          ],
           "flags": "is",
           "severity": "BLOCKER",
-          "message": "Credenciales vía Key Vault."
+          "message": "Usa SecretManagement/KeyVault."
         },
         {
-          "id": "ADF_BAN_PLAINTEXT_CONNECTION",
-          "description": "Prohíbe connectionString en claro.",
-          "type": "regex_forbidden",
-          "pattern": "\"connectionString\"\\s*:\\s*\"[^\"]+\"",
-          "flags": "is",
-          "severity": "BLOCKER",
-          "message": "Referencia secreto, no literal."
-        },
-        {
-          "id": "ADF_REQUIRE_RETRY",
-          "description": "Activities críticas requieren retry>=3.",
-          "type": "requires_when",
-          "when": "\"type\":\\s*\"(Copy|SqlServerStoredProcedure|ExecutePipeline|DatabricksNotebook)\"",
-          "require": "\"policy\"[\\s\\S]*?\"retry\":\\s*[3-9]",
-          "flags": "is",
-          "severity": "MAJOR",
-          "message": "Configura retries."
-        },
-        {
-          "id": "ADF_REQUIRE_DATASET_CLASSIFICATION",
-          "description": "Datasets con anotaciones de clasificación.",
-          "type": "requires_when",
-          "when": "\"type\":\\s*\"(Dataset|AzureBlobFSFile|DelimitedText|Parquet|Json)\"",
-          "require": "\"annotations\"\\s*:\\s*\\[\\s*\"(pii:masked|pii:none|restricted|public)\"",
+          "id": "PS_REQUIRE_TRANSCRIPT",
+          "description": "Auditoría de ejecución.",
+          "type": "requires_when_group",
+          "group": [
+            {
+              "when": "^[\\s\\S]*$",
+              "require_template": "Start-Transcript"
+            },
+            {
+              "when": "^[\\s\\S]*$",
+              "require_template": "Stop-Transcript"
+            }
+          ],
           "flags": "is",
           "severity": "MINOR",
-          "message": "Incluye annotations pii:*."
-        }
-      ]
-    },
-    {
-      "id": "controlm",
-      "file_match": [
-        "**/controlm/**/*.json",
-        "**/controlm/**/*.xml"
-      ],
-      "rules": [
-        {
-          "id": "CTM_REQUIRE_TIMEWINDOW",
-          "description": "Jobs con ventana de ejecución.",
-          "type": "requires_when",
-          "when": "(?i)(Job|SMART_FOLDER)",
-          "require": "(?i)(TimeFrom|TimeTo|RunWindow|TimeZone)",
-          "flags": "is",
-          "severity": "MAJOR",
-          "message": "Define ventana de ejecución."
+          "message": "Incluye Start/Stop-Transcript."
         },
         {
-          "id": "CTM_BAN_RUNAS_ADMIN",
-          "description": "Sin Administrator/ROOT.",
+          "id": "PS_BAN_RUNAS_ADMIN",
+          "description": "Evita elevaciones sin justificación.",
           "type": "regex_forbidden",
-          "pattern": "(?i)(RunAs|User)\\s*[:=]\\s*(Administrator|root)",
+          "pattern": "Start-Process[\\s\\S]*-Verb\\s+RunAs",
           "flags": "is",
-          "severity": "BLOCKER",
+          "severity": "MAJOR",
           "message": "Principio de mínimo privilegio."
         },
         {
-          "id": "CTM_REQUIRE_RETRIES",
-          "description": "Reintentos configurados.",
+          "id": "PS_REQUIRE_SAFE_DELETE",
+          "description": "Borrados destructivos con confirmación.",
           "type": "requires_when",
-          "when": "(?i)(Job|Command)",
-          "require": "(?i)(AutoEdit|MaxRerun|Rerun)\\s*[:=]\\s*[1-9]",
+          "when": "(?i)(Remove-Item|Remove-ChildItem)[\\s\\S]*-Recurse[\\s\\S]*-Force",
+          "require": "(?i)(-Confirm|-WhatIf)",
           "flags": "is",
           "severity": "MAJOR",
-          "message": "Configura reintentos."
+          "message": "Agrega -Confirm o -WhatIf."
         }
       ]
     }
-  ]
+  }
 }
-[policy_powershell.json]
-{
-  "policy_version": "1.0.0",
-  "engine": "powershell",
-  "mode": "static_code_scan",
-  "reporting": {
-    "fail_on_severity": [
-      "BLOCKER"
-    ],
-    "score_weights": {
-      "BLOCKER": 100,
-      "MAJOR": 20,
-      "MINOR": 5
-    },
-    "approval_max_score": 20,
-    "verdict_labels": {
-      "pass": "CUMPLE",
-      "fail": "NO CUMPLE"
-    }
-  },
-  "file_match": [
-    "**/*.ps1",
-    "**/*.psm1"
-  ],
-  "rules": [
-    {
-      "id": "PS_REQUIRE_HEADER",
-      "description": "Help-based comments (.SYNOPSIS/.DESCRIPTION).",
-      "type": "requires_when_group",
-      "group": [
-        {
-          "when": "^[\\s\\S]{0,800}",
-          "require_template": "\\.SYNOPSIS"
-        },
-        {
-          "when": "^[\\s\\S]{0,800}",
-          "require_template": "\\.DESCRIPTION"
-        }
-      ],
-      "flags": "is",
-      "severity": "MINOR",
-      "message": "Incluye help-based comments."
-    },
-    {
-      "id": "PS_REQUIRE_STRICTMODE",
-      "description": "Set-StrictMode y errores fatales.",
-      "type": "requires_when_group",
-      "group": [
-        {
-          "when": "^[\\s\\S]*$",
-          "require_template": "Set-StrictMode\\s+-Version\\s+(Latest|3)"
-        },
-        {
-          "when": "^[\\s\\S]*$",
-          "require_template": "\\$ErrorActionPreference\\s*=\\s*'Stop'"
-        }
-      ],
-      "flags": "is",
-      "severity": "MAJOR",
-      "message": "Activa StrictMode y ErrorActionPreference='Stop'."
-    },
-    {
-      "id": "PS_REQUIRE_CMDLETBINDING",
-      "description": "Funciones avanzadas.",
-      "type": "requires_when_group",
-      "group": [
-        {
-          "when": "function\\s+[A-Za-z0-9_]+\\s*\\{",
-          "require_template": "\\[CmdletBinding\\(\\)\\]"
-        },
-        {
-          "when": "param\\s*\\(",
-          "require_template": "\\[Parameter\\("
-        }
-      ],
-      "flags": "is",
-      "severity": "MINOR",
-      "message": "Usa [CmdletBinding()] y [Parameter()]."
-    },
-    {
-      "id": "PS_BAN_INVOKE_EXPRESSION",
-      "description": "Prohíbe iex/Invoke-Expression.",
-      "type": "regex_forbidden",
-      "pattern": "(?i)(Invoke-Expression|\\biex\\b)",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "No uses Invoke-Expression."
-    },
-    {
-      "id": "PS_BAN_DOWNLOADSTRING",
-      "description": "No descargar y ejecutar en caliente.",
-      "type": "regex_forbidden_any",
-      "patterns": [
-        "DownloadString\\(",
-        "Invoke-WebRequest\\([^\\)]*\\)\\s*\\|\\s*Invoke-Expression"
-      ],
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Riesgo de RCE."
-    },
-    {
-      "id": "PS_BAN_EXECUTIONPOLICY_BYPASS",
-      "description": "No modificar ExecutionPolicy.",
-      "type": "regex_forbidden",
-      "pattern": "(?i)Set-ExecutionPolicy|ExecutionPolicy\\s+Bypass",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "No cambies ExecutionPolicy en scripts."
-    },
-    {
-      "id": "PS_BAN_HARDCODED_CREDS",
-      "description": "Sin credenciales hardcodeadas.",
-      "type": "regex_forbidden_any",
-      "patterns": [
-        "ConvertTo-SecureString\\s+\"[^\"]+\"\\s+-AsPlainText\\s+-Force",
-        "Password\\s*=\\s*['\\\"][^'\\\"]+['\\\"]",
-        "-Credential\\s+\\(New-Object\\s+System.Management.Automation.PSCredential\\s*\\(\\s*['\\\"][^'\\\"]+['\\\"],\\s*['\\\"][^'\\\"]+['\\\"]\\s*\\)\\)",
-        "ConnectionString\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
-      ],
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Usa SecretManagement/KeyVault."
-    },
-    {
-      "id": "PS_REQUIRE_TRANSCRIPT",
-      "description": "Auditoría de ejecución.",
-      "type": "requires_when_group",
-      "group": [
-        {
-          "when": "^[\\s\\S]*$",
-          "require_template": "Start-Transcript"
-        },
-        {
-          "when": "^[\\s\\S]*$",
-          "require_template": "Stop-Transcript"
-        }
-      ],
-      "flags": "is",
-      "severity": "MINOR",
-      "message": "Incluye Start/Stop-Transcript."
-    },
-    {
-      "id": "PS_BAN_RUNAS_ADMIN",
-      "description": "Evita elevaciones sin justificación.",
-      "type": "regex_forbidden",
-      "pattern": "Start-Process[\\s\\S]*-Verb\\s+RunAs",
-      "flags": "is",
-      "severity": "MAJOR",
-      "message": "Principio de mínimo privilegio."
-    },
-    {
-      "id": "PS_REQUIRE_SAFE_DELETE",
-      "description": "Borrados destructivos con confirmación.",
-      "type": "requires_when",
-      "when": "(?i)(Remove-Item|Remove-ChildItem)[\\s\\S]*-Recurse[\\s\\S]*-Force",
-      "require": "(?i)(-Confirm|-WhatIf)",
-      "flags": "is",
-      "severity": "MAJOR",
-      "message": "Agrega -Confirm o -WhatIf."
-    }
-  ]
-}
+/* POLICY_BUNDLE_JSON_END */
+
+-- Validator: aplique estrictamente las políticas del bundle anterior.
+-- A continuación, el código a validar (Oracle). No hay IPC ni PowerShell en este bloque.
+
+CREATE TABLE CPPGS.TSTG_TBL_ADA_AUDITORIAS 
+   (SECTOR VARCHAR2(50 BYTE), 
+	EMPRESA VARCHAR2(50 BYTE), 
+	ANIO_AUDITORIA NUMBER(5,0), 
+	IDESPECIALIDAD NUMBER(10,0), 
+	ESPECIALIDAD VARCHAR2(50 BYTE), 
+	ID_SUBESPECIALIDAD NUMBER(10,0), 
+	SUBESPECIALIDAD VARCHAR2(30 BYTE), 
+	ESTRUCTURA_FLOR VARCHAR2(50 BYTE), 
+	ESTRUCTURA_MANUFACTURA VARCHAR2(50 BYTE), 
+	ESTRUCTURA_ETICA VARCHAR2(50 BYTE), 
+	NUM_DIRECTOR_ESPECIALIDAD NUMBER(10,0), 
+	DIRECTOR_ESPECIALIDAD VARCHAR2(50 BYTE), 
+	NUM_JEFE_PRIMERALINEA NUMBER(10,0), 
+	NOMBRE_JEFE_PRIMERALINEA VARCHAR2(100 BYTE), 
+	NUM_EMPLEADO NUMBER(10,0), 
+	EMPLEADO VARCHAR2(100 BYTE), 
+	AUDITOR_A_CARGO VARCHAR2(100 BYTE), 
+	ROL_AUDITORIA VARCHAR2(40 BYTE), 
+	ID_ROL_SISTEMA NUMBER(10,0), 
+	ROL_SISTEMA VARCHAR2(50 BYTE), 
+	FOLIO_AUDITORIA NUMBER(10,0), 
+	AUDITORIA VARCHAR2(400 BYTE), 
+	HORAS_SUPERVISION NUMBER(4,0), 
+	HORAS_EJECUCION NUMBER(4,0), 
+	HORAS_SEGUIMIENTO NUMBER(4,0), 
+	HORAS_ADMINISTRACION NUMBER(4,0), 
+	HORAS_PLANEADAS NUMBER(7,0), 
+	HORAS_FACTURADAS NUMBER(5,0), 
+	HRS_FACT_EJECUCION_HONESTEL NUMBER(4,0), 
+	HRS_FACT_SEGUIMIENTO NUMBER(4,0), 
+	HRS_FACT_DISCUSION NUMBER(3,0), 
+	HRS_FACT_SUPERVISION NUMBER(4,0), 
+	ID_PLAN NUMBER(10,0), 
+	NOMBRE_PLAN VARCHAR2(200 BYTE), 
+	ID_ESTATUS NUMBER(5,0), 
+	ESTATUS VARCHAR2(50 BYTE), 
+	DIAS_ATRASO NUMBER(5,0), 
+	ID_MOTIVO NUMBER(5,0), 
+	MOTIVO VARCHAR2(100 BYTE), 
+	RCL_TIPO_TRABAJO VARCHAR2(50 BYTE), 
+	RCL_ORIGEN VARCHAR2(50 BYTE), 
+	ID_DIRECCION NUMBER(5,0), 
+	DIRECCION VARCHAR2(100 BYTE), 
+	ID_GERENCIA NUMBER(5,0), 
+	GERENCIA VARCHAR2(150 BYTE), 
+	ID_PROCESO NUMBER(5,0), 
+	PROCESO VARCHAR2(300 BYTE), 
+	FECHA_INICIO_PLAN DATE, 
+	FECHA_FIN_PLAN DATE, 
+	FECHA_INICIO_REAL DATE, 
+	FECHA_FIN_REAL DATE, 
+	FOLIO_AUDITORIA_COMPLETO NUMBER(15,0), 
+	FOLIO_CECO VARCHAR2(20 BYTE), 
+	NB_CECO VARCHAR2(100 BYTE), 
+	NB_PAIS VARCHAR2(50 BYTE), 
+	ID_EMPRESA NUMBER(10,0), 
+	PORCENTAJE NUMBER(10,3), 
+	CALIFICACION VARCHAR2(10 BYTE), 
+	CALIFICACION_DESCRIPCION VARCHAR2(100 BYTE), 
+	OBJETIVO VARCHAR2(600 BYTE), 
+	ALCANCE VARCHAR2(600 BYTE), 
+	ATRASO_INICIAL NUMBER(10,0), 
+	REGISTRO NUMBER(10,0), 
+	REGISTRO_NOMBRE VARCHAR2(50 BYTE), 
+	FECHA_REGISTRO DATE, 
+	RIESGO VARCHAR2(25 BYTE), 
+	RIESGO_ADA VARCHAR2(10 BYTE), 
+	ID_UNIDAD NUMBER(10,0), 
+	UNIDAD_NEGOCIO VARCHAR2(50 BYTE), 
+	NB_ADN VARCHAR2(15 BYTE), 
+	CAUSA VARCHAR2(50 BYTE), 
+	ESTATUS_AGRUPADO NUMBER(10,0), 
+	TIENE_AUDITORIAS NUMBER(10,0), 
+	HORAS_NO_FACTURABLES NUMBER(5,0), 
+	EMPRESA_FACT VARCHAR2(50 BYTE), 
+	COMPANIA_FACT VARCHAR2(100 BYTE), 
+	UNIDAD_ADA_FACT VARCHAR2(50 BYTE), 
+	SUBNEGOCIO_ADA_FACT VARCHAR2(100 BYTE), 
+	FOLIO_HONESTEL NUMBER(15,0), 
+	ROL_DESCRIPCION VARCHAR2(50 BYTE), 
+	ID_ESP_CENTRAL NUMBER(10,0), 
+	FECHA_VALIDACION_INFORME_FINAL DATE, 
+	NOMBRE_CLIENTE_CARTA_INICIO VARCHAR2(600 BYTE), 
+	CARGA_MASIVA NUMBER(5,0), 
+	PREREGISTRO VARCHAR2(10 BYTE), 
+	ANTECEDENTE VARCHAR2(600 BYTE), 
+	RIESGO_ASOCIADO VARCHAR2(600 BYTE), 
+	ACTIVIDAD_DE_CONTROL VARCHAR2(600 BYTE), 
+	ASEVERACIONES VARCHAR2(50 BYTE), 
+	PRIORIDAD VARCHAR2(10 BYTE), 
+	TIPO_DE_TRABAJO VARCHAR2(20 BYTE), 
+	RESPONSABLE VARCHAR2(50 BYTE), 
+	DIRECTOR_GENERAL_UDN VARCHAR2(60 BYTE), 
+	COMENTARIOS VARCHAR2(600 BYTE), 
+	FECHA_PREREGISTRO DATE, 
+	TIPO_AUDITOR VARCHAR2(19 BYTE), 
+	REGULATORIA VARCHAR2(5 BYTE), 
+	UNIDAD_REGULATORIA VARCHAR2(80 BYTE), 
+	NIVEL1 VARCHAR2(100 BYTE), 
+	NIVEL2 VARCHAR2(100 BYTE), 
+	NIVEL3 VARCHAR2(100 BYTE), 
+	NIVEL4 VARCHAR2(100 BYTE), 
+	NIVEL5 VARCHAR2(100 BYTE), 
+	RESPONSABLE_NIVEL1 VARCHAR2(100 BYTE), 
+	RESPONSABLE_NIVEL2 VARCHAR2(100 BYTE), 
+	RESPONSABLE_NIVEL3 VARCHAR2(100 BYTE), 
+	RESPONSABLE_NIVEL4 VARCHAR2(100 BYTE), 
+	RESPONSABLE_NIVEL5 VARCHAR2(100 BYTE), 
+	FECHA_INS DATE, 
+	NOMBRE_UDN_INV VARCHAR2(50 BYTE), 
+	NOMBRE_ALMACEN_INV VARCHAR2(150 BYTE), 
+	ID_UNIDAD_AGU VARCHAR2(100 BYTE), 
+	UNIDAD_NEGOCIO_AGU VARCHAR2(100 BYTE), 
+	IDEMPRESA NUMBER(10,0), 
+	EMPRESA_NOMBRE VARCHAR2(100 BYTE), 
+	IDCOMPANIA NUMBER(10,0), 
+	NOMBRE_COMPANIA VARCHAR2(100 BYTE), 
+	CAUSA_AGU VARCHAR2(100 BYTE), 
+	GRUPOADA VARCHAR2(100 BYTE), 
+	UNIDAD_ADA VARCHAR2(100 BYTE), 
+	SUBNEGOCIO_ADA VARCHAR2(100 BYTE), 
+	ORIGEN_AUDITORIA VARCHAR2(100 BYTE), 
+	ZONA_AUDITORIA VARCHAR2(100 BYTE), 
+	TERRITORIO_AUDITORIA VARCHAR2(100 BYTE), 
+	REGION_OPERACION VARCHAR2(100 BYTE), 
+	ZONA_OPERACION VARCHAR2(100 BYTE), 
+	TERRITORIO_OPERACION VARCHAR2(100 BYTE), 
+	PLATAFORMA_EJECUCION VARCHAR2(100 BYTE), 
+	SUGERIDA VARCHAR2(100 BYTE)
+)
+COMPRESS NOLOGGING
+TABLESPACE TBS_DESP_ST_DAT  ;
+
+
+COMMENT ON TABLE CPPGS.TSTG_TBL_ADA_AUDITORIAS IS 'Tabla STG que descarga la informacion del proceso de una auditoria en ADA';
+
+/*-----------------------------------------------------------------------------------------------------------------------------------------------*/
+
+CREATE TABLE CPPGS.TBL_ADA_AUDITORIAS(
+	ID_REGISTRO_AUDIT NUMBER(3,0),
+    SECTOR VARCHAR2(50 BYTE), 
+	EMPRESA VARCHAR2(50 BYTE), 
+	ANIO_AUDITORIA NUMBER(5,0), 
+	IDESPECIALIDAD NUMBER(10,0), 
+	ESPECIALIDAD VARCHAR2(50 BYTE), 
+	ID_SUBESPECIALIDAD NUMBER(10,0), 
+	SUBESPECIALIDAD VARCHAR2(30 BYTE), 
+	ESTRUCTURA_FLOR VARCHAR2(50 BYTE), 
+	ESTRUCTURA_MANUFACTURA VARCHAR2(50 BYTE), 
+	ESTRUCTURA_ETICA VARCHAR2(50 BYTE), 
+	NUM_DIRECTOR_ESPECIALIDAD NUMBER(10,0), 
+	DIRECTOR_ESPECIALIDAD VARCHAR2(50 BYTE), 
+	NUM_JEFE_PRIMERALINEA NUMBER(10,0), 
+	NOMBRE_JEFE_PRIMERALINEA VARCHAR2(100 BYTE), 
+	NUM_EMPLEADO NUMBER(10,0), 
+	EMPLEADO VARCHAR2(100 BYTE), 
+	AUDITOR_A_CARGO VARCHAR2(100 BYTE), 
+	ROL_AUDITORIA VARCHAR2(40 BYTE), 
+	ID_ROL_SISTEMA NUMBER(10,0), 
+	ROL_SISTEMA VARCHAR2(50 BYTE), 
+	FOLIO_AUDITORIA NUMBER(10,0), 
+	AUDITORIA VARCHAR2(400 BYTE), 
+	HORAS_SUPERVISION NUMBER(4,0), 
+	HORAS_EJECUCION NUMBER(4,0), 
+	HORAS_SEGUIMIENTO NUMBER(4,0), 
+	HORAS_ADMINISTRACION NUMBER(4,0), 
+	HORAS_PLANEADAS NUMBER(7,0), 
+	HORAS_FACTURADAS NUMBER(5,0), 
+	HRS_FACT_EJECUCION_HONESTEL NUMBER(4,0), 
+	HRS_FACT_SEGUIMIENTO NUMBER(4,0), 
+	HRS_FACT_DISCUSION NUMBER(3,0), 
+	HRS_FACT_SUPERVISION NUMBER(4,0), 
+	ID_PLAN NUMBER(10,0), 
+	NOMBRE_PLAN VARCHAR2(200 BYTE), 
+	ID_ESTATUS NUMBER(5,0), 
+	ESTATUS VARCHAR2(50 BYTE), 
+	DIAS_ATRASO NUMBER(5,0), 
+	ID_MOTIVO NUMBER(5,0), 
+	MOTIVO VARCHAR2(100 BYTE), 
+	RCL_TIPO_TRABAJO VARCHAR2(50 BYTE), 
+	RCL_ORIGEN VARCHAR2(50 BYTE), 
+	ID_DIRECCION NUMBER(5,0), 
+	DIRECCION VARCHAR2(100 BYTE), 
+	ID_GERENCIA NUMBER(5,0), 
+	GERENCIA VARCHAR2(150 BYTE), 
+	ID_PROCESO NUMBER(5,0), 
+	PROCESO VARCHAR2(300 BYTE), 
+	FECHA_INICIO_PLAN DATE, 
+	FECHA_FIN_PLAN DATE, 
+	FECHA_INICIO_REAL DATE, 
+	FECHA_FIN_REAL DATE, 
+	FOLIO_AUDITORIA_COMPLETO NUMBER(15,0), 
+	FOLIO_CECO VARCHAR2(20 BYTE), 
+	NB_CECO VARCHAR2(100 BYTE), 
+	NB_PAIS VARCHAR2(50 BYTE), 
+	ID_EMPRESA NUMBER(10,0), 
+	PORCENTAJE NUMBER(10,3), 
+	CALIFICACION VARCHAR2(10 BYTE), 
+	CALIFICACION_DESCRIPCION VARCHAR2(100 BYTE), 
+	OBJETIVO VARCHAR2(600 BYTE), 
+	ALCANCE VARCHAR2(600 BYTE), 
+	ATRASO_INICIAL NUMBER(10,0), 
+	REGISTRO NUMBER(10,0), 
+	REGISTRO_NOMBRE VARCHAR2(50 BYTE), 
+	FECHA_REGISTRO DATE, 
+	RIESGO VARCHAR2(25 BYTE), 
+	RIESGO_ADA VARCHAR2(10 BYTE), 
+	ID_UNIDAD NUMBER(10,0), 
+	UNIDAD_NEGOCIO VARCHAR2(50 BYTE), 
+	NB_ADN VARCHAR2(15 BYTE), 
+	CAUSA VARCHAR2(50 BYTE), 
+	ESTATUS_AGRUPADO NUMBER(10,0), 
+	TIENE_AUDITORIAS NUMBER(10,0), 
+	HORAS_NO_FACTURABLES NUMBER(5,0), 
+	EMPRESA_FACT VARCHAR2(50 BYTE), 
+	COMPANIA_FACT VARCHAR2(100 BYTE), 
+	UNIDAD_ADA_FACT VARCHAR2(50 BYTE), 
+	SUBNEGOCIO_ADA_FACT VARCHAR2(100 BYTE), 
+	FOLIO_HONESTEL NUMBER(15,0), 
+	ROL_DESCRIPCION VARCHAR2(50 BYTE), 
+	ID_ESP_CENTRAL NUMBER(10,0), 
+	FECHA_VALIDACION_INFORME_FINAL DATE, 
+	NOMBRE_CLIENTE_CARTA_INICIO VARCHAR2(600 BYTE), 
+	CARGA_MASIVA NUMBER(5,0), 
+	PREREGISTRO VARCHAR2(10 BYTE), 
+	ANTECEDENTE VARCHAR2(600 BYTE), 
+	RIESGO_ASOCIADO VARCHAR2(600 BYTE), 
+	ACTIVIDAD_DE_CONTROL VARCHAR2(600 BYTE), 
+	ASEVERACIONES VARCHAR2(50 BYTE), 
+	PRIORIDAD VARCHAR2(10 BYTE), 
+	TIPO_DE_TRABAJO VARCHAR2(20 BYTE), 
+	RESPONSABLE VARCHAR2(50 BYTE), 
+	DIRECTOR_GENERAL_UDN VARCHAR2(60 BYTE), 
+	COMENTARIOS VARCHAR2(600 BYTE), 
+	FECHA_PREREGISTRO DATE, 
+	TIPO_AUDITOR VARCHAR2(19 BYTE), 
+	REGULATORIA VARCHAR2(5 BYTE), 
+	UNIDAD_REGULATORIA VARCHAR2(80 BYTE), 
+	NIVEL1 VARCHAR2(100 BYTE), 
+	NIVEL2 VARCHAR2(100 BYTE), 
+	NIVEL3 VARCHAR2(100 BYTE), 
+	NIVEL4 VARCHAR2(100 BYTE), 
+	NIVEL5 VARCHAR2(100 BYTE), 
+	RESPONSABLE_NIVEL1 VARCHAR2(100 BYTE), 
+	RESPONSABLE_NIVEL2 VARCHAR2(100 BYTE), 
+	RESPONSABLE_NIVEL3 VARCHAR2(100 BYTE), 
+	RESPONSABLE_NIVEL4 VARCHAR2(100 BYTE), 
+	RESPONSABLE_NIVEL5 VARCHAR2(100 BYTE), 
+	FECHA_INS DATE, 
+	NOMBRE_UDN_INV VARCHAR2(50 BYTE), 
+	NOMBRE_ALMACEN_INV VARCHAR2(150 BYTE), 
+	ID_UNIDAD_AGU VARCHAR2(100 BYTE), 
+	UNIDAD_NEGOCIO_AGU VARCHAR2(100 BYTE), 
+	IDEMPRESA NUMBER(10,0), 
+	EMPRESA_NOMBRE VARCHAR2(100 BYTE), 
+	IDCOMPANIA NUMBER(10,0), 
+	NOMBRE_COMPANIA VARCHAR2(100 BYTE), 
+	CAUSA_AGU VARCHAR2(100 BYTE), 
+	GRUPOADA VARCHAR2(100 BYTE), 
+	UNIDAD_ADA VARCHAR2(100 BYTE), 
+	SUBNEGOCIO_ADA VARCHAR2(100 BYTE), 
+	ORIGEN_AUDITORIA VARCHAR2(100 BYTE), 
+	ZONA_AUDITORIA VARCHAR2(100 BYTE), 
+	TERRITORIO_AUDITORIA VARCHAR2(100 BYTE), 
+	REGION_OPERACION VARCHAR2(100 BYTE), 
+	ZONA_OPERACION VARCHAR2(100 BYTE), 
+	TERRITORIO_OPERACION VARCHAR2(100 BYTE), 
+	PLATAFORMA_EJECUCION VARCHAR2(100 BYTE), 
+	SUGERIDA VARCHAR2(100 BYTE)
+)
+
+COMPRESS NOLOGGING
+TABLESPACE TBS_DESP_01_DAT   ;
+
+CREATE UNIQUE INDEX CPPGS.PK_ADA_AUDIT ON CPPGS.TBL_ADA_AUDITORIAS(ID_REGISTRO_AUDIT ASC, FOLIO_AUDITORIA ASC, FECHA_REGISTRO ASC)
+  NOLOGGING
+  TABLESPACE TBS_DESP_01_IDX    ;
+  
+  
+  ALTER TABLE CPPGS.TBL_ADA_AUDITORIAS ADD CONSTRAINT PK_ADA_AUDIT PRIMARY KEY (ID_REGISTRO_AUDIT, FOLIO_AUDITORIA, FECHA_REGISTRO)
+  USING INDEX CPPGS.PK_ADA_AUDIT ENABLE;
+  
+  
+COMMENT ON TABLE CPPGS.TBL_ADA_AUDITORIAS IS 'Tabla que guarda la informacion del proceso de una auditorias en ADA';
+
+
+
+/*-----------------------------------------------------------------------------------------------------------------------------------------------*/
+
+
+GRANT SELECT ON CPPGS.TBL_ADA_AUDITORIAS TO USRDATARPATEAM;
+GRANT SELECT ON CPPGS.TSTG_TBL_ADA_AUDITORIAS TO USREXTRACCIONES;
+GRANT SELECT ON CPPGS.TBL_ADA_AUDITORIAS TO USREXTRACCIONES;
+

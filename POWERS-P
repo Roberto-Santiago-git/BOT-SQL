@@ -1,0 +1,161 @@
+{
+  "policy_version": "1.0.0",
+  "engine": "powershell",
+  "mode": "static_code_scan",
+  "reporting": {
+    "fail_on_severity": [
+      "BLOCKER"
+    ],
+    "score_weights": {
+      "BLOCKER": 100,
+      "MAJOR": 20,
+      "MINOR": 5
+    },
+    "approval_max_score": 20,
+    "verdict_labels": {
+      "pass": "CUMPLE",
+      "fail": "NO CUMPLE"
+    }
+  },
+  "file_match": [
+    "**/*.ps1",
+    "**/*.psm1"
+  ],
+  "rules": [
+    {
+      "id": "PS_REQUIRE_HEADER",
+      "description": "Help-based comments (.SYNOPSIS/.DESCRIPTION).",
+      "type": "requires_when_group",
+      "group": [
+        {
+          "when": "^[\\s\\S]{0,800}",
+          "require_template": "\\.SYNOPSIS"
+        },
+        {
+          "when": "^[\\s\\S]{0,800}",
+          "require_template": "\\.DESCRIPTION"
+        }
+      ],
+      "flags": "is",
+      "severity": "MINOR",
+      "message": "Incluye help-based comments."
+    },
+    {
+      "id": "PS_REQUIRE_STRICTMODE",
+      "description": "Set-StrictMode y errores fatales.",
+      "type": "requires_when_group",
+      "group": [
+        {
+          "when": "^[\\s\\S]*$",
+          "require_template": "Set-StrictMode\\s+-Version\\s+(Latest|3)"
+        },
+        {
+          "when": "^[\\s\\S]*$",
+          "require_template": "\\$ErrorActionPreference\\s*=\\s*'Stop'"
+        }
+      ],
+      "flags": "is",
+      "severity": "MAJOR",
+      "message": "Activa StrictMode y ErrorActionPreference='Stop'."
+    },
+    {
+      "id": "PS_REQUIRE_CMDLETBINDING",
+      "description": "Funciones avanzadas.",
+      "type": "requires_when_group",
+      "group": [
+        {
+          "when": "function\\s+[A-Za-z0-9_]+\\s*\\{",
+          "require_template": "\\[CmdletBinding\\(\\)\\]"
+        },
+        {
+          "when": "param\\s*\\(",
+          "require_template": "\\[Parameter\\("
+        }
+      ],
+      "flags": "is",
+      "severity": "MINOR",
+      "message": "Usa [CmdletBinding()] y [Parameter()]."
+    },
+    {
+      "id": "PS_BAN_INVOKE_EXPRESSION",
+      "description": "Prohíbe iex/Invoke-Expression.",
+      "type": "regex_forbidden",
+      "pattern": "(?i)(Invoke-Expression|\\biex\\b)",
+      "flags": "is",
+      "severity": "BLOCKER",
+      "message": "No uses Invoke-Expression."
+    },
+    {
+      "id": "PS_BAN_DOWNLOADSTRING",
+      "description": "No descargar y ejecutar en caliente.",
+      "type": "regex_forbidden_any",
+      "patterns": [
+        "DownloadString\\(",
+        "Invoke-WebRequest\\([^\\)]*\\)\\s*\\|\\s*Invoke-Expression"
+      ],
+      "flags": "is",
+      "severity": "BLOCKER",
+      "message": "Riesgo de RCE."
+    },
+    {
+      "id": "PS_BAN_EXECUTIONPOLICY_BYPASS",
+      "description": "No modificar ExecutionPolicy.",
+      "type": "regex_forbidden",
+      "pattern": "(?i)Set-ExecutionPolicy|ExecutionPolicy\\s+Bypass",
+      "flags": "is",
+      "severity": "BLOCKER",
+      "message": "No cambies ExecutionPolicy en scripts."
+    },
+    {
+      "id": "PS_BAN_HARDCODED_CREDS",
+      "description": "Sin credenciales hardcodeadas.",
+      "type": "regex_forbidden_any",
+      "patterns": [
+        "ConvertTo-SecureString\\s+\"[^\"]+\"\\s+-AsPlainText\\s+-Force",
+        "Password\\s*=\\s*['\\\"][^'\\\"]+['\\\"]",
+        "-Credential\\s+\\(New-Object\\s+System.Management.Automation.PSCredential\\s*\\(\\s*['\\\"][^'\\\"]+['\\\"],\\s*['\\\"][^'\\\"]+['\\\"]\\s*\\)\\)",
+        "ConnectionString\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+      ],
+      "flags": "is",
+      "severity": "BLOCKER",
+      "message": "Usa SecretManagement/KeyVault."
+    },
+    {
+      "id": "PS_REQUIRE_TRANSCRIPT",
+      "description": "Auditoría de ejecución.",
+      "type": "requires_when_group",
+      "group": [
+        {
+          "when": "^[\\s\\S]*$",
+          "require_template": "Start-Transcript"
+        },
+        {
+          "when": "^[\\s\\S]*$",
+          "require_template": "Stop-Transcript"
+        }
+      ],
+      "flags": "is",
+      "severity": "MINOR",
+      "message": "Incluye Start/Stop-Transcript."
+    },
+    {
+      "id": "PS_BAN_RUNAS_ADMIN",
+      "description": "Evita elevaciones sin justificación.",
+      "type": "regex_forbidden",
+      "pattern": "Start-Process[\\s\\S]*-Verb\\s+RunAs",
+      "flags": "is",
+      "severity": "MAJOR",
+      "message": "Principio de mínimo privilegio."
+    },
+    {
+      "id": "PS_REQUIRE_SAFE_DELETE",
+      "description": "Borrados destructivos con confirmación.",
+      "type": "requires_when",
+      "when": "(?i)(Remove-Item|Remove-ChildItem)[\\s\\S]*-Recurse[\\s\\S]*-Force",
+      "require": "(?i)(-Confirm|-WhatIf)",
+      "flags": "is",
+      "severity": "MAJOR",
+      "message": "Agrega -Confirm o -WhatIf."
+    }
+  ]
+}

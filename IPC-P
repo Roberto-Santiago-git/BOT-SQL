@@ -1,0 +1,181 @@
+{
+  "policy_version": "1.0.0",
+  "engine": "ipc-mixed",
+  "mode": "static_config_scan",
+  "reporting": {
+    "fail_on_severity": [
+      "BLOCKER"
+    ],
+    "score_weights": {
+      "BLOCKER": 100,
+      "MAJOR": 20,
+      "MINOR": 5
+    },
+    "approval_max_score": 20,
+    "verdict_labels": {
+      "pass": "CUMPLE",
+      "fail": "NO CUMPLE"
+    }
+  },
+  "targets": [
+    {
+      "id": "airflow_py",
+      "file_match": [
+        "**/dags/**/*.py"
+      ],
+      "rules": [
+        {
+          "id": "AF_REQUIRE_DEFAULT_ARGS",
+          "description": "default_args con retries>=2, retry_delay y email_on_failure.",
+          "type": "requires_when_group",
+          "group": [
+            {
+              "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}",
+              "require_template": "retries\\s*:\\s*[2-9]"
+            },
+            {
+              "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}",
+              "require_template": "retry_delay\\s*=|retry_delay\\s*:\\s*timedelta\\("
+            },
+            {
+              "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}",
+              "require_template": "email_on_failure\\s*:\\s*True"
+            }
+          ],
+          "flags": "is",
+          "severity": "MAJOR",
+          "message": "Configura retries/retry_delay/email_on_failure."
+        },
+        {
+          "id": "AF_BAN_CATCHUP_TRUE",
+          "description": "En PROD no hay backfill automático.",
+          "type": "requires_when",
+          "when": "DAG\\(",
+          "require": "catchup\\s*=\\s*False",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Define catchup=False."
+        },
+        {
+          "id": "AF_REQUIRE_DAGRUN_TIMEOUT",
+          "description": "dagrun_timeout obligatorio.",
+          "type": "requires_when",
+          "when": "DAG\\(",
+          "require": "dagrun_timeout\\s*=\\s*timedelta\\(",
+          "flags": "is",
+          "severity": "MAJOR",
+          "message": "Incluye dagrun_timeout."
+        },
+        {
+          "id": "AF_BAN_PLAINTEXT_CREDS",
+          "description": "Prohíbe credenciales en claro.",
+          "type": "regex_forbidden_any",
+          "patterns": [
+            "requests\\.(get|post|put|delete)\\([^\\)]*(Authorization|Bearer|Basic)\\s*:\\s*['\\\"][A-Za-z0-9._:-]+",
+            "password\\s*=\\s*['\\\"][^'\\\"]+['\\\"]",
+            "user(name)?\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
+          ],
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Usa Connections/Secret Backend."
+        },
+        {
+          "id": "AF_BAN_XCOM_PII",
+          "description": "No PII en XCom.",
+          "type": "regex_forbidden",
+          "pattern": "xcom_push\\([^\\)]*(ssn|curp|rfc|card|cvv|clabe|telefono|email|direccion)",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "No envíes PII a XCom."
+        }
+      ]
+    },
+    {
+      "id": "adf_json",
+      "file_match": [
+        "**/adf/**/pipeline*.json",
+        "**/adf/**/linkedService*.json",
+        "**/adf/**/dataset*.json"
+      ],
+      "rules": [
+        {
+          "id": "ADF_REQUIRE_KEYVAULT",
+          "description": "LinkedServices deben usar Key Vault.",
+          "type": "requires_when",
+          "when": "\"type\":\\s*\"(AzureSqlDatabase|SqlServer|Oracle|AzureBlobStorage|AzureDataLakeStore|Sftp)\"",
+          "require": "\"typeProperties\"[\\s\\S]*?\"(connectionString|password|encryptedCredential)\":\\s*\\{\\s*\"type\":\\s*\"AzureKeyVaultSecretReference\"",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Credenciales vía Key Vault."
+        },
+        {
+          "id": "ADF_BAN_PLAINTEXT_CONNECTION",
+          "description": "Prohíbe connectionString en claro.",
+          "type": "regex_forbidden",
+          "pattern": "\"connectionString\"\\s*:\\s*\"[^\"]+\"",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Referencia secreto, no literal."
+        },
+        {
+          "id": "ADF_REQUIRE_RETRY",
+          "description": "Activities críticas requieren retry>=3.",
+          "type": "requires_when",
+          "when": "\"type\":\\s*\"(Copy|SqlServerStoredProcedure|ExecutePipeline|DatabricksNotebook)\"",
+          "require": "\"policy\"[\\s\\S]*?\"retry\":\\s*[3-9]",
+          "flags": "is",
+          "severity": "MAJOR",
+          "message": "Configura retries."
+        },
+        {
+          "id": "ADF_REQUIRE_DATASET_CLASSIFICATION",
+          "description": "Datasets con anotaciones de clasificación.",
+          "type": "requires_when",
+          "when": "\"type\":\\s*\"(Dataset|AzureBlobFSFile|DelimitedText|Parquet|Json)\"",
+          "require": "\"annotations\"\\s*:\\s*\\[\\s*\"(pii:masked|pii:none|restricted|public)\"",
+          "flags": "is",
+          "severity": "MINOR",
+          "message": "Incluye annotations pii:*."
+        }
+      ]
+    },
+    {
+      "id": "controlm",
+      "file_match": [
+        "**/controlm/**/*.json",
+        "**/controlm/**/*.xml"
+      ],
+      "rules": [
+        {
+          "id": "CTM_REQUIRE_TIMEWINDOW",
+          "description": "Jobs con ventana de ejecución.",
+          "type": "requires_when",
+          "when": "(?i)(Job|SMART_FOLDER)",
+          "require": "(?i)(TimeFrom|TimeTo|RunWindow|TimeZone)",
+          "flags": "is",
+          "severity": "MAJOR",
+          "message": "Define ventana de ejecución."
+        },
+        {
+          "id": "CTM_BAN_RUNAS_ADMIN",
+          "description": "Sin Administrator/ROOT.",
+          "type": "regex_forbidden",
+          "pattern": "(?i)(RunAs|User)\\s*[:=]\\s*(Administrator|root)",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Principio de mínimo privilegio."
+        },
+        {
+          "id": "CTM_REQUIRE_RETRIES",
+          "description": "Reintentos configurados.",
+          "type": "requires_when",
+          "when": "(?i)(Job|Command)",
+          "require": "(?i)(AutoEdit|MaxRerun|Rerun)\\s*[:=]\\s*[1-9]",
+          "flags": "is",
+          "severity": "MAJOR",
+          "message": "Configura reintentos."
+        }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,3 @@
-
 {
   "policy_version": "1.1",
   "name": "policy_ip",
@@ -45,8 +44,11 @@
         {
           "id": "BAN_NOLOGGING",
           "description": "Prohíbe NOLOGGING en DDL.",
-          "type": "regex_forbidden",
-          "pattern": "\\bNOLOGGING\\b",
+          "type": "regex_forbidden_any",
+          "patterns": [
+            "CREATE\\s+TABLE[\\s\\S]{0,2000}?\\bNOLOGGING\\b",
+            "CREATE\\s+(?:UNIQUE\\s+)?INDEX[\\s\\S]{0,2000}?\\bNOLOGGING\\b"
+          ],
           "flags": "is",
           "scope": [
             "ddl.table",
@@ -209,9 +211,13 @@
         {
           "id": "REQUIRE_WHERE_UPDATE",
           "description": "UPDATE debe tener WHERE.",
-          "type": "requires_when",
-          "when": "\\bUPDATE\\b",
-          "require": "\\bWHERE\\b",
+          "type": "requires_when_group",
+          "group": [
+            {
+              "when": "\\bUPDATE\\b[\\s\\S]{0,400}?;",
+              "require_template": "WHERE\\b"
+            }
+          ],
           "flags": "is",
           "severity": "BLOCKER",
           "message": "Evita updates masivos sin WHERE."
@@ -219,9 +225,13 @@
         {
           "id": "REQUIRE_WHERE_DELETE",
           "description": "DELETE debe tener WHERE.",
-          "type": "requires_when",
-          "when": "\\bDELETE\\b",
-          "require": "\\bWHERE\\b",
+          "type": "requires_when_group",
+          "group": [
+            {
+              "when": "\\bDELETE\\s+FROM\\b[\\s\\S]{0,400}?;",
+              "require_template": "WHERE\\b"
+            }
+          ],
           "flags": "is",
           "severity": "BLOCKER",
           "message": "Evita deletes masivos sin WHERE."
@@ -608,7 +618,7 @@
           "description": "Sin credenciales hardcodeadas.",
           "type": "regex_forbidden_any",
           "patterns": [
-            "ConvertTo-SecureString\\s+\"[^\"]+\"\\s+-AsPlainText\\s+-Force",
+            "ConvertTo-SecureString\\s+\\\"[^\\\"]+\\\"\\s+-AsPlainText\\s+-Force",
             "Password\\s*=\\s*['\\\"][^'\\\"]+['\\\"]",
             "-Credential\\s+\\(New-Object\\s+System.Management.Automation.PSCredential\\s*\\(\\s*['\\\"][^'\\\"]+['\\\"],\\s*['\\\"][^'\\\"]+['\\\"]\\s*\\)\\)",
             "ConnectionString\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"

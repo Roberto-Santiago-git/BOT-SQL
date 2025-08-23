@@ -7,38 +7,28 @@
       "policy_version": "1.0.1",
       "engine": "oracle-19c",
       "mode": "static_code_scan",
-      "owner_schemas": [
-        "CPPGS"
-      ],
+      "owner_schemas": ["CPPGS"],
       "approved_tablespaces": {
-        "tables": [
-          "TBS_DESP_01_DAT"
-        ],
-        "indexes": [
-          "TBS_DESP_01_IDX"
-        ]
+        "tables": ["TBS_DESP_01_DAT"],
+        "indexes": ["TBS_DESP_01_IDX"]
       },
       "reporting": {
-        "fail_on_severity": [
-          "BLOCKER"
-        ],
+        "fail_on_severity": ["BLOCKER"],
         "score_weights": {
           "BLOCKER": 100,
           "MAJOR": 20,
           "MINOR": 5
         },
         "approval_max_score": 20,
-        "verdict_labels": {
-          "pass": "CUMPLE",
-          "fail": "NO CUMPLE"
-        }
+        "verdict_labels": { "pass": "CUMPLE", "fail": "NO CUMPLE" }
       },
       "file_match": [
         "**/*.sql",
         "**/*.ddl",
         "**/*.pkg",
         "**/*.pks",
-        "**/*.pkb"
+        "**/*.pkb",
+        "**/*.txt"
       ],
       "rules": [
         {
@@ -50,17 +40,10 @@
             "CREATE\\s+(?:UNIQUE\\s+)?INDEX[\\s\\S]{0,2000}?\\bNOLOGGING\\b"
           ],
           "flags": "is",
-          "scope": [
-            "ddl.table",
-            "ddl.index"
-          ],
+          "scope": ["ddl.table", "ddl.index"],
           "severity": "BLOCKER",
           "message": "NOLOGGING prohibido en PROD. Usa LOGGING.",
-          "autofix": {
-            "type": "replace",
-            "search": "\\bNOLOGGING\\b",
-            "replace": "LOGGING"
-          }
+          "autofix": { "type": "replace", "search": "\\bNOLOGGING\\b", "replace": "LOGGING" }
         },
         {
           "id": "ENFORCE_TABLESPACE_TABLES",
@@ -69,9 +52,7 @@
           "when": "CREATE\\s+TABLE\\b",
           "require": "TABLESPACE\\s+(TBS_DESP_01_DAT)\\b",
           "flags": "is",
-          "scope": [
-            "ddl.table"
-          ],
+          "scope": ["ddl.table"],
           "severity": "BLOCKER",
           "message": "TABLESPACE de tablas debe ser TBS_DESP_01_DAT."
         },
@@ -82,9 +63,7 @@
           "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\b",
           "require": "TABLESPACE\\s+(TBS_DESP_01_IDX)\\b",
           "flags": "is",
-          "scope": [
-            "ddl.index"
-          ],
+          "scope": ["ddl.index"],
           "severity": "BLOCKER",
           "message": "TABLESPACE de índices debe ser TBS_DESP_01_IDX."
         },
@@ -94,9 +73,7 @@
           "type": "regex_forbidden",
           "pattern": "\\bCREATE\\s+TABLE\\b[\\s\\S]*?\\bCOMPRESS\\b",
           "flags": "is",
-          "scope": [
-            "ddl.table"
-          ],
+          "scope": ["ddl.table"],
           "severity": "MAJOR",
           "message": "COMPRESS en tablas requiere excepción documentada."
         },
@@ -107,9 +84,7 @@
           "when": "PRIMARY\\s+KEY\\b",
           "require": "CONSTRAINT\\s+PK_[A-Z0-9_]+\\b",
           "flags": "is",
-          "scope": [
-            "ddl.table"
-          ],
+          "scope": ["ddl.table"],
           "severity": "MAJOR",
           "message": "Usa nombre de constraint PRIMARY KEY con prefijo PK_."
         },
@@ -120,9 +95,7 @@
           "when": "ADD\\s+CONSTRAINT\\s+[A-Z0-9_]+\\s+UNIQUE\\b",
           "require": "ADD\\s+CONSTRAINT\\s+UK_[A-Z0-9_]+\\s+UNIQUE\\b",
           "flags": "is",
-          "scope": [
-            "ddl.table"
-          ],
+          "scope": ["ddl.table"],
           "severity": "MINOR",
           "message": "Usa nombre de constraint UNIQUE con prefijo UK_."
         },
@@ -132,9 +105,7 @@
           "type": "regex_forbidden",
           "pattern": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+(?![A-Z0-9_]+\\.(?:IDX_|PK_))[A-Z0-9_.]+",
           "flags": "is",
-          "scope": [
-            "ddl.index"
-          ],
+          "scope": ["ddl.index"],
           "severity": "MAJOR",
           "message": "Nombra índices como IDX_* (o PK_* si soporta PK)."
         },
@@ -144,11 +115,7 @@
           "type": "regex_forbidden",
           "pattern": "CREATE\\s+(?:TABLE|VIEW|SEQUENCE|TRIGGER|INDEX)\\s+(?!CPPGS\\.)[A-Z0-9_]+",
           "flags": "is",
-          "scope": [
-            "ddl.table",
-            "ddl.index",
-            "ddl.other"
-          ],
+          "scope": ["ddl.table", "ddl.index", "ddl.other"],
           "severity": "MAJOR",
           "message": "Califica objetos con esquema (p.ej., CPPGS.TABLA)."
         },
@@ -156,14 +123,31 @@
           "id": "BAN_SELECT_STAR",
           "description": "Prohíbe SELECT *.",
           "type": "regex_forbidden",
-          "pattern": "\\bSELECT\\s*\\*\\b",
-          "flags": "is",
-          "scope": [
-            "dml",
-            "plsql"
-          ],
+          "pattern": "^\\s*SELECT\\s*\\*\\s+FROM\\b",
+          "flags": "im",
+          "scope": ["dml", "plsql"],
           "severity": "MAJOR",
           "message": "No uses SELECT *. Lista columnas explícitas."
+        },
+        {
+          "id": "ENFORCE_PARTITION_NAMING",
+          "description": "Nombre de partición debe iniciar con PT_ y cumplir longitud/caracteres.",
+          "type": "regex_forbidden",
+          "pattern": "\\bPARTITION\\s+(?!PT_[A-Z0-9_]{1,27}\\b)[A-Z0-9_]{1,30}",
+          "flags": "i",
+          "scope": ["ddl.table"],
+          "severity": "MAJOR",
+          "message": "Nombra particiones como PT_<columna|función>_... (A–Z, 0–9, _, 4–30)."
+        },
+        {
+          "id": "REQUIRE_GRANT_FQN",
+          "description": "GRANT con objeto calificado por esquema.",
+          "type": "regex_forbidden",
+          "pattern": "^\\s*GRANT\\s+\\w+\\s+ON\\s+(?!CPPGS\\.)[A-Z0-9_]+",
+          "flags": "im",
+          "scope": ["ddl.other"],
+          "severity": "MAJOR",
+          "message": "Califica el objeto en GRANT con esquema (CPPGS.<objeto>)."
         },
         {
           "id": "BAN_PARALLEL_HINTS",
@@ -174,11 +158,7 @@
             "\\bALTER\\s+SESSION\\s+.*\\bPARALLEL\\b"
           ],
           "flags": "is",
-          "scope": [
-            "dml",
-            "plsql",
-            "session"
-          ],
+          "scope": ["dml", "plsql", "session"],
           "severity": "BLOCKER",
           "message": "Paralelismo forzado no permitido en apps OLTP."
         },
@@ -187,15 +167,10 @@
           "description": "Cada tabla nueva debe tener COMMENT ON TABLE.",
           "type": "requires_when_group",
           "group": [
-            {
-              "when": "CREATE\\s+TABLE\\s+(CPPGS\\.[A-Z0-9_]+)",
-              "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';"
-            }
+            { "when": "CREATE\\s+TABLE\\s+(CPPGS\\.[A-Z0-9_]+)", "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';" }
           ],
           "flags": "is",
-          "scope": [
-            "ddl.table"
-          ],
+          "scope": ["ddl.table"],
           "severity": "MINOR",
           "message": "Agrega COMMENT ON TABLE con descripción."
         },
@@ -212,12 +187,7 @@
           "id": "REQUIRE_WHERE_UPDATE",
           "description": "UPDATE debe tener WHERE.",
           "type": "requires_when_group",
-          "group": [
-            {
-              "when": "\\bUPDATE\\b[\\s\\S]{0,400}?;",
-              "require_template": "WHERE\\b"
-            }
-          ],
+          "group": [{ "when": "\\bUPDATE\\b[\\s\\S]{0,400}?;", "require_template": "WHERE\\b" }],
           "flags": "is",
           "severity": "BLOCKER",
           "message": "Evita updates masivos sin WHERE."
@@ -226,12 +196,7 @@
           "id": "REQUIRE_WHERE_DELETE",
           "description": "DELETE debe tener WHERE.",
           "type": "requires_when_group",
-          "group": [
-            {
-              "when": "\\bDELETE\\s+FROM\\b[\\s\\S]{0,400}?;",
-              "require_template": "WHERE\\b"
-            }
-          ],
+          "group": [{ "when": "\\bDELETE\\s+FROM\\b[\\s\\S]{0,400}?;", "require_template": "WHERE\\b" }],
           "flags": "is",
           "severity": "BLOCKER",
           "message": "Evita deletes masivos sin WHERE."
@@ -329,44 +294,24 @@
       "engine": "ipc-mixed",
       "mode": "static_config_scan",
       "reporting": {
-        "fail_on_severity": [
-          "BLOCKER"
-        ],
-        "score_weights": {
-          "BLOCKER": 100,
-          "MAJOR": 20,
-          "MINOR": 5
-        },
+        "fail_on_severity": ["BLOCKER"],
+        "score_weights": { "BLOCKER": 100, "MAJOR": 20, "MINOR": 5 },
         "approval_max_score": 20,
-        "verdict_labels": {
-          "pass": "CUMPLE",
-          "fail": "NO CUMPLE"
-        }
+        "verdict_labels": { "pass": "CUMPLE", "fail": "NO CUMPLE" }
       },
       "targets": [
         {
           "id": "airflow_py",
-          "file_match": [
-            "**/dags/**/*.py"
-          ],
+          "file_match": ["**/dags/**/*.py"],
           "rules": [
             {
               "id": "AF_REQUIRE_DEFAULT_ARGS",
               "description": "default_args con retries>=2, retry_delay y email_on_failure.",
               "type": "requires_when_group",
               "group": [
-                {
-                  "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}",
-                  "require_template": "retries\\s*:\\s*[2-9]"
-                },
-                {
-                  "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}",
-                  "require_template": "retry_delay\\s*=|retry_delay\\s*:\\s*timedelta\\("
-                },
-                {
-                  "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}",
-                  "require_template": "email_on_failure\\s*:\\s*True"
-                }
+                { "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}", "require_template": "retries\\s*:\\s*[2-9]" },
+                { "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}", "require_template": "retry_delay\\s*=|retry_delay\\s*:\\s*timedelta\\(" },
+                { "when": "default_args\\s*=\\s*\\{[\\s\\S]*?\\}", "require_template": "email_on_failure\\s*:\\s*True" }
               ],
               "flags": "is",
               "severity": "MAJOR",
@@ -467,10 +412,7 @@
         },
         {
           "id": "controlm",
-          "file_match": [
-            "**/controlm/**/*.json",
-            "**/controlm/**/*.xml"
-          ],
+          "file_match": ["**/controlm/**/*.json", "**/controlm/**/*.xml"],
           "rules": [
             {
               "id": "CTM_REQUIRE_TIMEWINDOW",
@@ -510,38 +452,20 @@
       "engine": "powershell",
       "mode": "static_code_scan",
       "reporting": {
-        "fail_on_severity": [
-          "BLOCKER"
-        ],
-        "score_weights": {
-          "BLOCKER": 100,
-          "MAJOR": 20,
-          "MINOR": 5
-        },
+        "fail_on_severity": ["BLOCKER"],
+        "score_weights": { "BLOCKER": 100, "MAJOR": 20, "MINOR": 5 },
         "approval_max_score": 20,
-        "verdict_labels": {
-          "pass": "CUMPLE",
-          "fail": "NO CUMPLE"
-        }
+        "verdict_labels": { "pass": "CUMPLE", "fail": "NO CUMPLE" }
       },
-      "file_match": [
-        "**/*.ps1",
-        "**/*.psm1"
-      ],
+      "file_match": ["**/*.ps1", "**/*.psm1"],
       "rules": [
         {
           "id": "PS_REQUIRE_HEADER",
           "description": "Help-based comments (.SYNOPSIS/.DESCRIPTION).",
           "type": "requires_when_group",
           "group": [
-            {
-              "when": "^[\\s\\S]{0,800}",
-              "require_template": "\\.SYNOPSIS"
-            },
-            {
-              "when": "^[\\s\\S]{0,800}",
-              "require_template": "\\.DESCRIPTION"
-            }
+            { "when": "^[\\s\\S]{0,800}", "require_template": "\\.SYNOPSIS" },
+            { "when": "^[\\s\\S]{0,800}", "require_template": "\\.DESCRIPTION" }
           ],
           "flags": "is",
           "severity": "MINOR",
@@ -552,14 +476,8 @@
           "description": "Set-StrictMode y errores fatales.",
           "type": "requires_when_group",
           "group": [
-            {
-              "when": "^[\\s\\S]*$",
-              "require_template": "Set-StrictMode\\s+-Version\\s+(Latest|3)"
-            },
-            {
-              "when": "^[\\s\\S]*$",
-              "require_template": "\\$ErrorActionPreference\\s*=\\s*'Stop'"
-            }
+            { "when": "^[\\s\\S]*$", "require_template": "Set-StrictMode\\s+-Version\\s+(Latest|3)" },
+            { "when": "^[\\s\\S]*$", "require_template": "\\$ErrorActionPreference\\s*=\\s*'Stop'" }
           ],
           "flags": "is",
           "severity": "MAJOR",
@@ -570,14 +488,8 @@
           "description": "Funciones avanzadas.",
           "type": "requires_when_group",
           "group": [
-            {
-              "when": "function\\s+[A-Za-z0-9_]+\\s*\\{",
-              "require_template": "\\[CmdletBinding\\(\\)\\]"
-            },
-            {
-              "when": "param\\s*\\(",
-              "require_template": "\\[Parameter\\("
-            }
+            { "when": "function\\s+[A-Za-z0-9_]+\\s*\\{", "require_template": "\\[CmdletBinding\\(\\)\\]" },
+            { "when": "param\\s*\\(", "require_template": "\\[Parameter\\(" }
           ],
           "flags": "is",
           "severity": "MINOR",
@@ -632,14 +544,8 @@
           "description": "Auditoría de ejecución.",
           "type": "requires_when_group",
           "group": [
-            {
-              "when": "^[\\s\\S]*$",
-              "require_template": "Start-Transcript"
-            },
-            {
-              "when": "^[\\s\\S]*$",
-              "require_template": "Stop-Transcript"
-            }
+            { "when": "^[\\s\\S]*$", "require_template": "Start-Transcript" },
+            { "when": "^[\\s\\S]*$", "require_template": "Stop-Transcript" }
           ],
           "flags": "is",
           "severity": "MINOR",
@@ -668,3 +574,4 @@
     }
   }
 }
+

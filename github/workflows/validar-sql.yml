@@ -1,0 +1,37 @@
+name: validar-sql
+on:
+  push:
+    paths:
+      - "**/*.sql"  - "**/*.pks"  - "**/*.pkb"  - "**/*.prc"  - "**/*.fnc"  - "**/*.txt"
+      - "**/*.ps1"  - "**/*.psm1" - "**/*.prm"  - "**/*.ipc.txt" - "**/*.wf.txt" - "**/*.xml"
+  pull_request:
+    paths:
+      - "**/*.sql"  - "**/*.pks"  - "**/*.pkb"  - "**/*.prc"  - "**/*.fnc"  - "**/*.txt"
+      - "**/*.ps1"  - "**/*.psm1" - "**/*.prm"  - "**/*.ipc.txt" - "**/*.wf.txt" - "**/*.xml"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      POLICY: "https://raw.githubusercontent.com/Roberto-Santiago-git/BOT-SQL/aa3b738/validator/policy_ip.json"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.x" }
+
+      - name: Ejecutar validador
+        run: |
+          git ls-files -z '*.sql' '*.pks' '*.pkb' '*.prc' '*.fnc' '*.txt' '*.ps1' '*.psm1' '*.prm' '*.ipc.txt' '*.wf.txt' '*.xml' > files.z || true
+          : > report.txt
+          while IFS= read -r -d '' f; do
+            echo "=== $f ===" | tee -a report.txt
+            python validator/src/validator.py "$POLICY" "$f" || true
+            echo "" >> report.txt
+          done < files.z
+          if grep -q "Veredicto: NO CUMPLE" report.txt; then exit 1; fi
+
+      - name: Publicar reporte
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: validator-report, path: report.txt }

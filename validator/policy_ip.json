@@ -1,9 +1,51 @@
 {
   "version": "2025-08-22",
-  "policies": [
-    {"name": "oracle", "path": "policies/oracle.json", "required": true},
-    {"name": "powershell", "path": "policies/powershell.json", "required": true},
-    {"name": "ipc", "path": "policies/ipc.json", "required": true}
-  ],
-  "output": { "prefix": "Veredicto: " }
+  "doc_versions": {
+    "oracle": "Estandares_OraclePLSQL_v1.0",
+    "powershell": "Estándares Desarrollo PowerShell",
+    "ipc": "Estándares Desarrollos IPC_v2"
+  },
+  "output": { "prefix": "Veredicto: " },
+  "namespaces": [
+    {
+      "namespace": "oracle",
+      "applies_to": ["*.sql","*.pks","*.pkb","*.prc","*.fnc"],
+      "rules": [
+        {"id":"ORC-SELECT-NO-STAR","desc":"Prohibido SELECT *",
+         "pattern":"(?i)select\\s+\\*\\s+from","severity":"error","cite":"Oracle §Select"},
+        {"id":"ORC-TABLE-OPTIONS","desc":"CREATE TABLE con NOLOGGING + COMPRESS + TABLESPACE",
+         "pattern":"(?is)create\\s+table[\\s\\S]+?(NOLOGGING)[\\s\\S]+?(COMPRESS)[\\s\\S]+?(TABLESPACE)","must_match":true,"severity":"error","cite":"Oracle §Tablas"},
+        {"id":"ORC-IDX-NAME","desc":"Índices/PK con prefijo PK_/IDX_",
+         "pattern":"(?i)create\\s+unique\\s+index\\s+(?!PK_|IDX_)","severity":"warn","cite":"Oracle §Nomenclatura"}
+      ]
+    },
+    {
+      "namespace": "powershell",
+      "applies_to": ["*.ps1"],
+      "rules": [
+        {"id":"PS-CLEAR-HOST-FIRST","desc":"Clear-Host al inicio",
+         "pattern":"^(?i)\\s*clear-host","scope":"file_start","severity":"error","cite":"PS §Estructura"},
+        {"id":"PS-NO-NESTED-SHELLS","desc":"Prohibido lanzar shells secundarios (Start-Process/cmd.exe/powershell.exe)",
+         "pattern":"(?is)Start-Process|cmd\\.exe|powershell\\.exe","invert":true,"severity":"error","cite":"PS §Ejecución"},
+        {"id":"PS-RECIPIENTS-PARAMDB","desc":"Destinatarios desde tabla de parámetros",
+         "pattern":"(?i)TBL_PARAMETROS_PROCESO","must_match":true,"severity":"warn","cite":"PS §Correo"}
+      ]
+    },
+    {
+      "namespace": "ipc",
+      "applies_to": ["*.prm","*.ipc.txt","*.wf.txt"],
+      "rules": [
+        {"id":"IPC-WF-NAME","desc":"WF_<CARPETA>_<0001>_<PROYECTO> en MAYÚSCULAS",
+         "pattern":"(?i)\\bWF_[A-Z0-9]+_\\d{4}_[A-Z0-9_]+\\b","must_match":true,"severity":"error","cite":"IPC §Nomenclatura WF"},
+        {"id":"IPC-SESSION-NAME","desc":"Sesiones con s_ y 'Fail parent if this task fails'",
+         "pattern":"(?i)\\bs_\\w+\\b|Fail\\s+parent\\s+if\\s+this\\s+task\\s+fails","must_match":true,"severity":"error","cite":"IPC §Sesiones"},
+        {"id":"IPC-LOG-SETTINGS","desc":"Workflow log compatible + Nombre_Workflow.txt",
+         "pattern":"(?i)Write\\s+Backward\\s+Compatible\\s+Workflow\\s+Log\\s+File|Nombre_Workflow\\.txt","must_match":true,"severity":"error","cite":"IPC §Logs"},
+        {"id":"IPC-NO-TRUNCATE","desc":"Prohibido 'Truncate target table option'",
+         "pattern":"(?i)Truncate\\s+target\\s+table\\s+option","invert":true,"severity":"error","cite":"IPC §Carga"},
+        {"id":"IPC-PRM-HEADER","desc":".prm con [Global] y $$PW_/$$PM_",
+         "pattern":"(?i)\\[Global\\]|\\$\\$PW_|\\$\\$PM_","must_match":true,"severity":"error","cite":"IPC §Parámetros"}
+      ]
+    }
+  ]
 }

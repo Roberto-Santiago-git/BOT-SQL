@@ -1,50 +1,39 @@
-{
-  "version": "2025-08-22",
-  "doc_versions": {
-    "oracle": "Estandares_OraclePLSQL_v1.0",
-    "powershell": "Estándares Desarrollo PowerShell",
-    "ipc": "Estándares Desarrollos IPC_v2"
-  },
-  "output": { "prefix": "Veredicto: " },
-  "namespaces": [
-    {
-      "namespace": "oracle",
-      "applies_to": ["*.sql","*.pks","*.pkb","*.prc","*.fnc"],
-      "rules": [
-        {"id":"ORC-SELECT-NO-STAR","desc":"Prohibido SELECT *",
-         "pattern":"(?i)select\\s+\\*\\s+from","severity":"error","cite":"Oracle §Select"},
-        {"id":"ORC-TABLE-OPTIONS","desc":"CREATE TABLE con NOLOGGING + COMPRESS + TABLESPACE",
-         "pattern":"(?is)create\\s+table[\\s\\S]+?(NOLOGGING)[\\s\\S]+?(COMPRESS)[\\s\\S]+?(TABLESPACE)","must_match":true,"severity":"error","cite":"Oracle §Tablas"},
-        {"id":"ORC-IDX-NAME","desc":"Índices/PK con prefijo PK_/IDX_",
-         "pattern":"(?i)create\\s+unique\\s+index\\s+(?!PK_|IDX_)","severity":"warn","cite":"Oracle §Nomenclatura"}
-      ]
-    },
-    {
-      "namespace": "powershell",
-      "applies_to": ["*.ps1"],
-      "rules": [
-        {"id":"PS-CLEAR-HOST-FIRST","desc":"Clear-Host al inicio",
-         "pattern":"^(?i)\\s*clear-host","scope":"file_start","severity":"error","cite":"PS §Estructura"},
-        {"id":"PS-NO-NESTED-SHELLS","desc":"Prohibido lanzar shells secundarios (Start-Process/cmd.exe/powershell.exe)",
-         "pattern":"(?is)Start-Process|cmd\\.exe|powershell\\.exe","invert":true,"severity":"error","cite":"PS §Ejecución"},
-        {"id":"PS-RECIPIENTS-PARAMDB","desc":"Destinatarios desde tabla de parámetros",
-         "pattern":"(?i)TBL_PARAMETROS_PROCESO","must_match":true,"severity":"warn","cite":"PS §Correo"}
-      ]
-    },
-    {
-      "namespace": "ipc",
-      "applies_to": ["*.prm","*.ipc.txt","*.wf.txt"],
-      "rules": [
-        {"id":"IPC-WF-NAME","desc":"WF_<CARPETA>_<0001>_<PROYECTO> en MAYÚSCULAS",
-         "pattern":"(?i)\\bWF_[A-Z0-9]+_\\d{4}_[A-Z0-9_]+\\b","must_match":true,"severity":"error","cite":"IPC §Nomenclatura WF"},
-        {"id":"IPC-SESSION-NAME","desc":"Sesiones con s_ y 'Fail parent if this task fails'",
-         "pattern":"(?i)\\bs_\\w+\\b|Fail\\s+parent\\s+if\\s+this\\s+task\\s+fails","must_match":true,"severity":"error","cite":"IPC §Sesiones"},
-        {"id":"IPC-LOG-SETTINGS","desc":"Workflow log compatible + Nombre_Workflow.txt",
-         "pattern":"(?i)Write\\s+Backward\\s+Compatible\\s+Workflow\\s+Log\\s+File|Nombre_Workflow\\.txt","must_match":true,"severity":"error","cite":"IPC §Logs"},
-        {"id":"IPC-NO-TRUNCATE","desc":"Prohibido 'Truncate target table option'",
-         "pattern":"(?i)Truncate\\s+target\\s+table\\s+option","invert":true,"severity":"error","cite":"IPC §Carga"},
-        {"id":"IPC-PRM-HEADER","desc":".prm con [Global] y $$PW_/$$PM_",
-         "pattern":"(?i)\\[Global\\]|\\$\\$PW_|\\$\\$PM_","must_match":true,"severity":"error","cite":"IPC §Parámetros"}
+import re, json, sys, pathlib
+
+def parse_oracle_ctx(text, extractors):
+    ctx = {"schema":"<SCHEMA>", "table":"<TABLE>", "columns": []}
+    ct = re.search(extractors["oracle"]["create_table"], text, re.I|re.S)
+    if ct:
+        schema, table, cols_block = ct.group(1), ct.group(2), ct.group(3)
+        if schema: ctx["schema"] = schema
+        if table:  ctx["table"]  = table
+        cols = re.findall(extractors["oracle"]["column_def"], cols_block, re.I)
+        # solo nombres, no inventar
+        ctx["columns"] = [c[0] for c in cols]
+    return ctx
+
+def binding_from_ctx(rule_id, ctx, assist):
+    b = {}
+    if rule_id == "ORC-SELECT-NO-STAR":
+        b["table"] = ctx.get("table","<TABLE>")
+        if ctx.get("columns"):
+            b["columns_or_placeholder"] = ", ".join(ctx["columns"])
+        else:
+            b["columns_or_placeholder"] = "<col1, col2, ...>"
+    elif rule_id == "ORC-PK-EXISTS":
+        b["schema"] = ctx.get("schema","<SCHEMA>")
+        b["table"]  = ctx.get("table","<TABLE>")
+        # Nunca inventar columnas de PK
+        b["pk_cols"] = "<PK_COL1, PK_COL2, ...>"
+    elif rule_id == "ORC-TABLE-OPTIONS":
+        tbs = (((assist.get("defaults") or {}).get("oracle") or {}).get("tablespace")) or "<TABLESPACE>"
+        b["tablespace"] = tbs
+    elif rule_id == "ORC-IDX-NAME":
+        # firstcol se toma del ON (...) si la regla la capturó; si no, placeholder
+        b["table"] = ctx.get("table","<TABLE>")
+        b["firstcol"] = ctx["columns"][0] if ctx.get("columns") else "<COL>"
+    return b
+:true,"severity":"error","cite":"IPC §Parámetros"}
       ]
     }
   ]

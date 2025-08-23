@@ -305,6 +305,49 @@
       "flags": "is",
       "severity": "BLOCKER",
       "message": "Agrega COMPRESS n en índices compuestos."
+    },
+    {
+      "id": "ORC-REQUIRE-COMMIT-AFTER-DML",
+      "description": "Solo exigir COMMIT cuando hay transacción explícita con DML.",
+      "type": "requires_when_group",
+      "group": [
+        {
+          "when": "BEGIN\\s+TRANSACTION\\b[\\s\\S]*?(INSERT|UPDATE|DELETE|MERGE)\\b",
+          "require_template": "COMMIT\\b"
+        }
+      ],
+      "flags": "is",
+      "scope": [
+        "session",
+        "dml"
+      ],
+      "severity": "MAJOR",
+      "message": "Falta COMMIT tras transacción con DML."
+    },
+    {
+      "id": "ORC-GRANT-NO-COMMIT",
+      "description": "No exigir COMMIT para GRANT/DDL.",
+      "type": "regex_forbidden",
+      "pattern": "BEGIN\\s+TRANSACTION\\b[\\s\\S]*?GRANT\\b[\\s\\S]*?COMMIT\\b",
+      "flags": "is",
+      "scope": [
+        "session"
+      ],
+      "severity": "MINOR",
+      "message": "No añadas COMMIT por GRANT; los DDL ya hacen commit implícito."
+    },
+    {
+      "id": "ORC-TSQL-BEGIN-TRANSACTION",
+      "description": "BEGIN TRANSACTION es T-SQL; no Oracle.",
+      "type": "regex_forbidden",
+      "pattern": "\\bBEGIN\\s+TRANSACTION\\b",
+      "flags": "is",
+      "scope": [
+        "session"
+      ],
+      "severity": "MAJOR",
+      "message": "En Oracle usa SET TRANSACTION/SAVEPOINT; evita 'BEGIN TRANSACTION'."
     }
   ]
 }
+

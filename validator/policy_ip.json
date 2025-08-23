@@ -158,3 +158,69 @@ def eval_rules(text, ns, ctx, assist):
                     "quote": r.get("quote"),
                     "fix": fix
                 })
+        else:
+            m = matches[0] if matches else None
+            fix = render_fix(r, text, ctx, assist, m)
+            violations.append({
+                "id": r["id"],
+                "desc": r["desc"],
+                "severity": r.get("severity", "warn"),
+                "cite": r.get("cite"),
+                "quote": r.get("quote"),
+                "fix": fix
+            })
+    return violations
+
+# ---------- MAIN ----------
+def main():
+    if len(sys.argv) < 3:
+        print("Veredicto: NO CUMPLE")
+        print("Falta policy_ip.(json|txt) en Conocimiento")
+        sys.exit(1)
+
+    policy_path, target = sys.argv[1], sys.argv[2]
+    text = _read_text(target)
+    if text is None:
+        print("Veredicto: NO CUMPLE")
+        print("- [error] INPUT-NO-CODE: Proporciona el artefacto en ```...``` o adjunta archivo.")
+        sys.exit(2)
+
+    policy, assist = load_policy(policy_path)
+
+    # nombre para applies_to
+    if pathlib.Path(target).exists():
+        name = os.path.basename(target)
+    elif target.startswith(("http://", "https://")):
+        name = os.path.basename(target.split("?")[0])
+    else:
+        name = guess_inline_name(text)
+
+    # contexto Oracle
+    ctx = parse_oracle_ctx(text, assist.get("extractors", {}))
+
+    all_viol = []
+    for ns in policy.get("namespaces", []):
+        pats = ns.get("applies_to")
+        if pats and not any(fnmatch.fnmatch(name, pat) for pat in pats):
+            continue
+        all_viol.extend(eval_rules(text, ns, ctx, assist))
+
+    prefix = policy.get("output", {}).get("prefix", "Veredicto: ")
+    if all_viol:
+        print(prefix + "NO CUMPLE")
+        for v in all_viol:
+            print(f"- [{v['severity']}] {v['id']}: {v['desc']}")
+            if v.get("quote"):
+                print(f"  Cita: {v['quote']}")
+            if v.get("cite"):
+                print(f"  Fuente: {v['cite']}")
+            if v.get("fix"):
+                print("  Sentencia corregida:")
+                print("  " + v["fix"].replace("\n", "\n  "))
+        sys.exit(2)
+    else:
+        print(prefix + "CUMPLE")
+        sys.exit(0)
+
+if __name__ == "__main__":
+    main()

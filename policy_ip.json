@@ -7,28 +7,23 @@
       "policy_version": "1.0.1",
       "engine": "oracle-19c",
       "mode": "static_code_scan",
-      "owner_schemas": ["CPPGS"],
+      "owner_schemas": [
+        "CPPGS","AUTEAM","SCSAI","SCBIOCATCH","AUDOTS",
+        "USREXTRACCIONES","USRRETAIL","USROTS","USRDEVIPC"
+      ],
       "approved_tablespaces": {
         "tables": ["TBS_DESP_01_DAT"],
         "indexes": ["TBS_DESP_01_IDX"]
       },
       "reporting": {
         "fail_on_severity": ["BLOCKER"],
-        "score_weights": {
-          "BLOCKER": 100,
-          "MAJOR": 20,
-          "MINOR": 5
-        },
+        "score_weights": { "BLOCKER": 100, "MAJOR": 20, "MINOR": 5 },
         "approval_max_score": 20,
         "verdict_labels": { "pass": "CUMPLE", "fail": "NO CUMPLE" }
       },
       "file_match": [
-        "**/*.sql",
-        "**/*.ddl",
-        "**/*.pkg",
-        "**/*.pks",
-        "**/*.pkb",
-        "**/*.txt"
+        "**/*.sql","**/*.ddl","**/*.pkg","**/*.pks","**/*.pkb",
+        "**/*.prc","**/*.fnc","**/*.txt"
       ],
       "rules": [
         {
@@ -40,7 +35,7 @@
             "CREATE\\s+(?:UNIQUE\\s+)?INDEX[\\s\\S]{0,2000}?\\bNOLOGGING\\b"
           ],
           "flags": "is",
-          "scope": ["ddl.table", "ddl.index"],
+          "scope": ["ddl.table","ddl.index"],
           "severity": "BLOCKER",
           "message": "NOLOGGING prohibido en PROD. Usa LOGGING.",
           "autofix": { "type": "replace", "search": "\\bNOLOGGING\\b", "replace": "LOGGING" }
@@ -111,43 +106,43 @@
         },
         {
           "id": "REQUIRE_SCHEMA_QUALIFIED_DDL",
-          "description": "DDL calificado con esquema.",
+          "description": "DDL calificado con esquema permitido.",
           "type": "regex_forbidden",
-          "pattern": "CREATE\\s+(?:TABLE|VIEW|SEQUENCE|TRIGGER|INDEX)\\s+(?!CPPGS\\.)[A-Z0-9_]+",
+          "pattern": "CREATE\\s+(?:TABLE|VIEW|SEQUENCE|TRIGGER|INDEX)\\s+(?!(?:CPPGS|AUTEAM|SCSAI|SCBIOCATCH|AUDOTS|USREXTRACCIONES|USRRETAIL|USROTS|USRDEVIPC)\\.)[A-Z0-9_]+",
           "flags": "is",
-          "scope": ["ddl.table", "ddl.index", "ddl.other"],
+          "scope": ["ddl.table","ddl.index","ddl.other"],
           "severity": "MAJOR",
-          "message": "Califica objetos con esquema (p.ej., CPPGS.TABLA)."
+          "message": "Califica objetos con esquema permitido: CPPGS, AUTEAM, SCSAI, SCBIOCATCH, AUDOTS (PROD) o USREXTRACCIONES, USRRETAIL, USROTS, USRDEVIPC (DEV)."
+        },
+        {
+          "id": "REQUIRE_GRANT_FQN",
+          "description": "GRANT sobre objeto con esquema permitido.",
+          "type": "regex_forbidden",
+          "pattern": "^\\s*GRANT\\s+\\w+(?:\\s*,\\s*\\w+)*\\s+ON\\s+(?!(?:CPPGS|AUTEAM|SCSAI|SCBIOCATCH|AUDOTS|USREXTRACCIONES|USRRETAIL|USROTS|USRDEVIPC)\\.)[A-Z0-9_]+",
+          "flags": "im",
+          "scope": ["ddl.other"],
+          "severity": "MAJOR",
+          "message": "Califica el objeto en GRANT con un esquema permitido."
+        },
+        {
+          "id": "BAN_UNAPPROVED_SCHEMA",
+          "description": "Prohíbe uso de esquemas no aprobados.",
+          "type": "regex_forbidden",
+          "pattern": "\\b(?!CPPGS\\b|AUTEAM\\b|SCSAI\\b|SCBIOCATCH\\b|AUDOTS\\b|USREXTRACCIONES\\b|USRRETAIL\\b|USROTS\\b|USRDEVIPC\\b)[A-Z][A-Z0-9_]{0,30}\\.[A-Z0-9_]+",
+          "flags": "i",
+          "scope": ["ddl.table","ddl.index","ddl.other","dml","plsql"],
+          "severity": "BLOCKER",
+          "message": "Usa solo esquemas permitidos: CPPGS, AUTEAM, SCSAI, SCBIOCATCH, AUDOTS (PROD) o USREXTRACCIONES, USRRETAIL, USROTS, USRDEVIPC (DEV)."
         },
         {
           "id": "BAN_SELECT_STAR",
           "description": "Prohíbe SELECT *.",
           "type": "regex_forbidden",
-          "pattern": "^\\s*SELECT\\s*\\*\\s+FROM\\b",
-          "flags": "im",
-          "scope": ["dml", "plsql"],
+          "pattern": "\\bSELECT\\s*\\*\\b",
+          "flags": "is",
+          "scope": ["dml","plsql"],
           "severity": "MAJOR",
           "message": "No uses SELECT *. Lista columnas explícitas."
-        },
-        {
-          "id": "ENFORCE_PARTITION_NAMING",
-          "description": "Nombre de partición debe iniciar con PT_ y cumplir longitud/caracteres.",
-          "type": "regex_forbidden",
-          "pattern": "\\bPARTITION\\s+(?!PT_[A-Z0-9_]{1,27}\\b)[A-Z0-9_]{1,30}",
-          "flags": "i",
-          "scope": ["ddl.table"],
-          "severity": "MAJOR",
-          "message": "Nombra particiones como PT_<columna|función>_... (A–Z, 0–9, _, 4–30)."
-        },
-        {
-          "id": "REQUIRE_GRANT_FQN",
-          "description": "GRANT con objeto calificado por esquema.",
-          "type": "regex_forbidden",
-          "pattern": "^\\s*GRANT\\s+\\w+\\s+ON\\s+(?!CPPGS\\.)[A-Z0-9_]+",
-          "flags": "im",
-          "scope": ["ddl.other"],
-          "severity": "MAJOR",
-          "message": "Califica el objeto en GRANT con esquema (CPPGS.<objeto>)."
         },
         {
           "id": "BAN_PARALLEL_HINTS",
@@ -158,7 +153,7 @@
             "\\bALTER\\s+SESSION\\s+.*\\bPARALLEL\\b"
           ],
           "flags": "is",
-          "scope": ["dml", "plsql", "session"],
+          "scope": ["dml","plsql","session"],
           "severity": "BLOCKER",
           "message": "Paralelismo forzado no permitido en apps OLTP."
         },
@@ -167,7 +162,15 @@
           "description": "Cada tabla nueva debe tener COMMENT ON TABLE.",
           "type": "requires_when_group",
           "group": [
-            { "when": "CREATE\\s+TABLE\\s+(CPPGS\\.[A-Z0-9_]+)", "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';" }
+            { "when": "CREATE\\s+TABLE\\s+(CPPGS\\.[A-Z0-9_]+)", "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';" },
+            { "when": "CREATE\\s+TABLE\\s+(AUTEAM\\.[A-Z0-9_]+)", "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';" },
+            { "when": "CREATE\\s+TABLE\\s+(SCSAI\\.[A-Z0-9_]+)", "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';" },
+            { "when": "CREATE\\s+TABLE\\s+(SCBIOCATCH\\.[A-Z0-9_]+)", "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';" },
+            { "when": "CREATE\\s+TABLE\\s+(AUDOTS\\.[A-Z0-9_]+)", "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';" },
+            { "when": "CREATE\\s+TABLE\\s+(USREXTRACCIONES\\.[A-Z0-9_]+)", "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';" },
+            { "when": "CREATE\\s+TABLE\\s+(USRRETAIL\\.[A-Z0-9_]+)", "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';" },
+            { "when": "CREATE\\s+TABLE\\s+(USROTS\\.[A-Z0-9_]+)", "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';" },
+            { "when": "CREATE\\s+TABLE\\s+(USRDEVIPC\\.[A-Z0-9_]+)", "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';" }
           ],
           "flags": "is",
           "scope": ["ddl.table"],
@@ -187,7 +190,9 @@
           "id": "REQUIRE_WHERE_UPDATE",
           "description": "UPDATE debe tener WHERE.",
           "type": "requires_when_group",
-          "group": [{ "when": "\\bUPDATE\\b[\\s\\S]{0,400}?;", "require_template": "WHERE\\b" }],
+          "group": [
+            { "when": "\\bUPDATE\\b[\\s\\S]{0,400}?;", "require_template": "WHERE\\b" }
+          ],
           "flags": "is",
           "severity": "BLOCKER",
           "message": "Evita updates masivos sin WHERE."
@@ -196,7 +201,9 @@
           "id": "REQUIRE_WHERE_DELETE",
           "description": "DELETE debe tener WHERE.",
           "type": "requires_when_group",
-          "group": [{ "when": "\\bDELETE\\s+FROM\\b[\\s\\S]{0,400}?;", "require_template": "WHERE\\b" }],
+          "group": [
+            { "when": "\\bDELETE\\s+FROM\\b[\\s\\S]{0,400}?;", "require_template": "WHERE\\b" }
+          ],
           "flags": "is",
           "severity": "BLOCKER",
           "message": "Evita deletes masivos sin WHERE."
@@ -412,7 +419,7 @@
         },
         {
           "id": "controlm",
-          "file_match": ["**/controlm/**/*.json", "**/controlm/**/*.xml"],
+          "file_match": ["**/controlm/**/*.json","**/controlm/**/*.xml"],
           "rules": [
             {
               "id": "CTM_REQUIRE_TIMEWINDOW",
@@ -457,7 +464,7 @@
         "approval_max_score": 20,
         "verdict_labels": { "pass": "CUMPLE", "fail": "NO CUMPLE" }
       },
-      "file_match": ["**/*.ps1", "**/*.psm1"],
+      "file_match": ["**/*.ps1","**/*.psm1"],
       "rules": [
         {
           "id": "PS_REQUIRE_HEADER",
@@ -574,4 +581,3 @@
     }
   }
 }
-

@@ -8,7 +8,7 @@
     },
     "extractors": {
       "oracle": {
-        "create_table": "(?is)create\\s+table\\s+(?:(\\w+)\\.)?(\\w+)\\s*\\((.*?)\\)\\s*;",
+        "create_table": "(?is)create\\s+table\\s+(?:(\\w+)\\.)?(\\w+)\\s*\\((.*?)\\)",
         "column_def": "(?im)^\\s*(\\w+)\\s+([A-Z]+(?:\\(\\d+(?:,\\d+)?\\))?)",
         "partition_key": "(?is)partition\\s+by\\s+\\w+\\s*\\(\\s*([A-Z0-9_]+)\\s*\\)",
         "partition_name": "(?i)\\bpartition\\s+([A-Z0-9_]{1,30})\\b"
@@ -113,8 +113,8 @@
         {
           "id": "PS-CLEAR-HOST-FIRST",
           "desc": "Clear-Host al inicio",
-          "pattern": "^(?i)\\s*clear-host",
-          "scope": "file_start",
+          "pattern": "(?is)\\A\\s*clear-host\\b",
+          "must_match": true,
           "severity": "error",
           "explain": "Estructura estándar de script.",
           "quote": "Todo script inicia con Clear-Host.",
@@ -130,7 +130,7 @@
     },
     {
       "namespace": "ipc",
-      "applies_to": ["*.prm", "*.ipc.txt", "*.wf.txt"],
+      "applies_to": ["*.prm", "*.ipc.txt", "*.wf.txt", "*.txt"],
       "rules": [
         {
           "id": "IPC-PRM-HEADER",
@@ -176,3 +176,4 @@
     }
   ]
 }
+

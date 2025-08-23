@@ -1,0 +1,9 @@
+{
+  "version": "2025-08-22",
+  "policies": [
+    {"name": "oracle", "path": "policies/oracle.json", "required": true},
+    {"name": "powershell", "path": "policies/powershell.json", "required": true},
+    {"name": "ipc", "path": "policies/ipc.json", "required": true}
+  ],
+  "output": { "prefix": "Veredicto: " }
+}

@@ -1,32 +1,37 @@
+# validator/src/validator.py
 import sys, json, re, pathlib, urllib.request, os, fnmatch
 
 FLAGS = re.I | re.M | re.S
 
-# ---------- Heurísticas sin fences ----------
+# ---------------- Heurísticas sin fences ----------------
 SQL_TOKENS = r"(?is)\b(CREATE|ALTER|COMMENT|GRANT|REVOKE|DROP|SELECT|INSERT|UPDATE|DELETE)\b|(?is)\bPARTITION\s+BY\b"
 IPC_TOKENS = r"(?im)^\s*\[Global\]\b|(?s)\$\$PM_|(?s)\$\$PW_"
 PS_TOKENS  = r"(?im)^\s*(Clear-Host|param\(|Write-Output|Get-ChildItem|Set-Content)\b"
 XML_TOKENS = r"(?is)<\?xml|<partition\s+name="
 
-def looks_like_code(text):
-    return any(re.search(p, text) for p in (SQL_TOKENS, IPC_TOKENS, PS_TOKENS, XML_TOKENS))
+def looks_like_code(text: str) -> bool:
+    return any(re.search(p, text or "") for p in (SQL_TOKENS, IPC_TOKENS, PS_TOKENS, XML_TOKENS))
 
-def guess_inline_name(text):
-    if re.search(XML_TOKENS, text): return "inline.xml"
-    if re.search(PS_TOKENS,  text): return "inline.ps1"
-    if re.search(IPC_TOKENS, text): return "inline.prm"
+def guess_inline_name(text: str) -> str:
+    if re.search(XML_TOKENS, text or ""): return "inline.xml"
+    if re.search(PS_TOKENS,  text or ""): return "inline.ps1"
+    if re.search(IPC_TOKENS, text or ""): return "inline.prm"
     return "inline.sql"
 
-# ---------- IO ----------
-def _read_text(path_or_url):
+# ---------------- IO ----------------
+def _read_text(path_or_url: str):
+    # URL
     if path_or_url.startswith(("http://", "https://")):
         with urllib.request.urlopen(path_or_url) as r:
             return r.read().decode("utf-8")
+    # Archivo existente
     p = pathlib.Path(path_or_url)
     if p.exists():
         return p.read_text(encoding="utf-8", errors="ignore")
+    # Inline sin fences
     if looks_like_code(path_or_url):
         return path_or_url
+    # Stdin con "-"
     if path_or_url == "-":
         data = sys.stdin.read()
         if data:
@@ -37,8 +42,8 @@ def load_policy(path_or_url):
     data = json.loads(_read_text(path_or_url))
     return data, data.get("assist", {})
 
-# ---------- CONTEXTO ORACLE ----------
-def parse_oracle_ctx(text, extractors):
+# ---------------- Contexto ORACLE (no inventar) ----------------
+def parse_oracle_ctx(text: str, extractors: dict):
     ctx = {"schema": "<SCHEMA>", "table": "<TABLE>", "columns": []}
     oracle_ext = (extractors or {}).get("oracle", {}) if extractors else {}
 
@@ -61,8 +66,8 @@ def parse_oracle_ctx(text, extractors):
             ctx["partcol"] = pk.group(1)
     return ctx
 
-# ---------- BINDINGS ----------
-def binding_from_ctx(rule_id, ctx, assist):
+# ---------------- Bindings para fixes ----------------
+def binding_from_ctx(rule_id: str, ctx: dict, assist: dict):
     b = {}
     if rule_id == "ORC-SELECT-NO-STAR":
         b["table"] = ctx.get("table", "<TABLE>")
@@ -84,14 +89,14 @@ def binding_from_ctx(rule_id, ctx, assist):
         b["schema"]  = ctx.get("schema", "<SCHEMA>")
     return b
 
-# ---------- RENDER DEL FIX ----------
-def _sub_template_vars(tpl, bind):
+# ---------------- Render de fixes ----------------
+def _sub_template_vars(tpl: str, bind: dict) -> str:
     out = tpl
     for k, v in bind.items():
         out = out.replace("${" + k + "}", v)
     return out
 
-def render_fix(rule, text, ctx, assist, first_match):
+def render_fix(rule: dict, text: str, ctx: dict, assist: dict, first_match: re.Match | None):
     fx = rule.get("fix") or {}
     if not fx:
         return None
@@ -101,7 +106,7 @@ def render_fix(rule, text, ctx, assist, first_match):
     # particiones: usa token incumplido como sufijo
     if rule["id"] in ("ORC-PART-NAME", "XML-PART-NAME") and first_match:
         offending = first_match.group(1)
-        if re.fullmatch(r"[A-Za-z0-9_]{1,30}", offending):
+        if offending and re.fullmatch(r"[A-Za-z0-9_]{1,30}", offending):
             bind["suffix"] = offending
 
     tpl = fx.get("template", "")
@@ -113,54 +118,15 @@ def render_fix(rule, text, ctx, assist, first_match):
         if m:
             last = m.lastindex or 0
             for i in range(1, last + 1):
-                tpl = tpl.replace("${g" + str(i) + "}", m.group(i))
+                gi = m.group(i)
+                tpl = tpl.replace("${g" + str(i) + "}", gi if gi is not None else "")
             if last >= 1 and m.group(1) is not None:
                 tpl = tpl.replace("${block}", m.group(1))
+
     return tpl.strip() if tpl else None
 
-# ---------- APLICACIÓN DE FIXES ----------
-def apply_rule(text, rule, ctx, assist, mode_all=False):
-    fx = rule.get("fix") or {}
-    if not fx:
-        return text, 0
-    if not (mode_all or rule.get("autofix_safe") is True):
-        return text, 0
-
-    loc = fx.get("locator")
-    if not loc:
-        return text, 0
-    pat = re.compile(loc, FLAGS)
-
-    def _sub(m):
-        rep = render_fix(rule, text, ctx, assist, m)
-        return rep if rep is not None else m.group(0)
-
-    rtype = fx.get("type")
-    count = 0
-    if rtype in ("replace", "replace_token", "ensure_clause", "insert_after", "insert_before"):
-        new_text, count = pat.subn(_sub, text)
-        return new_text, count
-    # tipos no aplicables (rename_suggest, etc.)
-    return text, 0
-
-def apply_all(text, policy, ctx, assist, mode_all=False):
-    total = 0
-    changed = True
-    # iterar hasta estabilizar por si un fix habilita otro
-    while changed:
-        changed = False
-        for ns in policy.get("namespaces", []):
-            new_text = text
-            for r in ns.get("rules", []):
-                new_text, cnt = apply_rule(new_text, r, ctx, assist, mode_all=mode_all)
-                if cnt:
-                    total += cnt
-                    changed = True
-            text = new_text
-    return text, total
-
-# ---------- EVALUACIÓN ----------
-def eval_rules(text, ns, ctx, assist):
+# ---------------- Evaluación de reglas ----------------
+def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
     violations = []
     for r in ns.get("rules", []):
         pat = re.compile(r.get("pattern", ""), FLAGS)
@@ -176,7 +142,6 @@ def eval_rules(text, ns, ctx, assist):
         if invert:
             hit = not hit
         violated = (not hit) if must else hit
-
         if not violated:
             continue
 
@@ -206,7 +171,7 @@ def eval_rules(text, ns, ctx, assist):
             })
     return violations
 
-# ---------- MAIN ----------
+# ---------------- MAIN ----------------
 def main():
     if len(sys.argv) < 3:
         print("Veredicto: NO CUMPLE")
@@ -214,14 +179,8 @@ def main():
         sys.exit(1)
 
     policy_path, target = sys.argv[1], sys.argv[2]
-    mode = "validate"
-    mode_all = False
-    if len(sys.argv) >= 4:
-        if sys.argv[3] in ("--apply", "--apply=safe"):
-            mode = "apply"
-        elif sys.argv[3] == "--apply=all":
-            mode = "apply"; mode_all = True
 
+    # artefacto: archivo, URL raw, stdin "-" o texto sin fences
     text = _read_text(target)
     if text is None:
         print("Veredicto: NO CUMPLE")
@@ -230,7 +189,7 @@ def main():
 
     policy, assist = load_policy(policy_path)
 
-    # nombre/applies_to
+    # nombre lógico para applies_to
     if pathlib.Path(target).exists():
         name = os.path.basename(target)
     elif target.startswith(("http://", "https://")):
@@ -238,16 +197,10 @@ def main():
     else:
         name = guess_inline_name(text)
 
-    # contexto
+    # contexto Oracle (sin inventar)
     ctx = parse_oracle_ctx(text, assist.get("extractors", {}))
 
-    # aplica fixes opcionalmente
-    if mode == "apply":
-        new_text, total = apply_all(text, policy, ctx, assist, mode_all=mode_all)
-        if total > 0:
-            text = new_text  # revalidar sobre el texto ajustado
-
-    # eval
+    # eval por namespaces aplicables
     all_viol = []
     for ns in policy.get("namespaces", []):
         pats = ns.get("applies_to")
@@ -265,7 +218,7 @@ def main():
             if v.get("cite"):
                 print(f"  Fuente: {v['cite']}")
             if v.get("fix"):
-                print("  Sentencia corregida:")
+                print("  Recomendación (sentencia corregida):")
                 print("  " + v["fix"].replace("\n", "\n  "))
         sys.exit(2)
     else:

@@ -1,39 +1,151 @@
-import re, json, sys, pathlib
-
-def parse_oracle_ctx(text, extractors):
-    ctx = {"schema":"<SCHEMA>", "table":"<TABLE>", "columns": []}
-    ct = re.search(extractors["oracle"]["create_table"], text, re.I|re.S)
-    if ct:
-        schema, table, cols_block = ct.group(1), ct.group(2), ct.group(3)
-        if schema: ctx["schema"] = schema
-        if table:  ctx["table"]  = table
-        cols = re.findall(extractors["oracle"]["column_def"], cols_block, re.I)
-        # solo nombres, no inventar
-        ctx["columns"] = [c[0] for c in cols]
-    return ctx
-
-def binding_from_ctx(rule_id, ctx, assist):
-    b = {}
-    if rule_id == "ORC-SELECT-NO-STAR":
-        b["table"] = ctx.get("table","<TABLE>")
-        if ctx.get("columns"):
-            b["columns_or_placeholder"] = ", ".join(ctx["columns"])
-        else:
-            b["columns_or_placeholder"] = "<col1, col2, ...>"
-    elif rule_id == "ORC-PK-EXISTS":
-        b["schema"] = ctx.get("schema","<SCHEMA>")
-        b["table"]  = ctx.get("table","<TABLE>")
-        # Nunca inventar columnas de PK
-        b["pk_cols"] = "<PK_COL1, PK_COL2, ...>"
-    elif rule_id == "ORC-TABLE-OPTIONS":
-        tbs = (((assist.get("defaults") or {}).get("oracle") or {}).get("tablespace")) or "<TABLESPACE>"
-        b["tablespace"] = tbs
-    elif rule_id == "ORC-IDX-NAME":
-        # firstcol se toma del ON (...) si la regla la capturó; si no, placeholder
-        b["table"] = ctx.get("table","<TABLE>")
-        b["firstcol"] = ctx["columns"][0] if ctx.get("columns") else "<COL>"
-    return b
-:true,"severity":"error","cite":"IPC §Parámetros"}
+{
+  "version": "2025-08-22",
+  "output": { "prefix": "Veredicto: " },
+  "assist": {
+    "mode": "input_only",
+    "defaults": {
+      "oracle": { "tablespace": "<TABLESPACE>" }
+    },
+    "extractors": {
+      "oracle": {
+        "create_table": "(?is)create\\s+table\\s+(?:(\\w+)\\.)?(\\w+)\\s*\\((.*?)\\)\\s*;",
+        "column_def": "(?im)^\\s*(\\w+)\\s+([A-Z]+(?:\\(\\d+(?:,\\d+)?\\))?)",
+        "partition_key": "(?is)partition\\s+by\\s+\\w+\\s*\\(\\s*([A-Z0-9_]+)\\s*\\)",
+        "partition_name": "(?i)\\bpartition\\s+([A-Z0-9_]{1,30})\\b"
+      },
+      "index_on": "(?is)create\\s+(?:unique\\s+)?index\\s+(\\w+)\\s+on\\s+(?:(\\w+)\\.)?(\\w+)\\s*\\(([^)]+)\\)"
+    }
+  },
+  "namespaces": [
+    {
+      "namespace": "oracle",
+      "applies_to": ["*.sql","*.pks","*.pkb","*.prc","*.fnc"],
+      "rules": [
+        {
+          "id": "ORC-SELECT-NO-STAR",
+          "desc": "Prohibido SELECT *",
+          "pattern": "(?i)select\\s+\\*\\s+from\\s+([A-Z0-9_.]+)",
+          "severity": "error",
+          "explain": "Enumera columnas explícitas.",
+          "quote": "En SELECT se deben especificar columnas; se prohíbe el asterisco.",
+          "cite": "Oracle » Columnas en SELECT e INSERT",
+          "fix": {
+            "type": "replace",
+            "locator": "(?i)select\\s+\\*\\s+from\\s+([A-Z0-9_.]+)",
+            "template": "SELECT ${columns_or_placeholder} FROM ${table}",
+            "bindings": ["table","columns_or_placeholder"]
+          },
+          "autofix_safe": false
+        },
+        {
+          "id": "ORC-TABLE-OPTIONS",
+          "desc": "CREATE TABLE con COMPRESS, NOLOGGING y TABLESPACE explícito",
+          "pattern": "(?is)create\\s+table[\\s\\S]+?\\)\\s*(?!.*\\bCOMPRESS\\b)(?!.*\\bNOLOGGING\\b)(?!.*\\bTABLESPACE\\b)",
+          "severity": "error",
+          "explain": "Estandariza opciones físicas.",
+          "quote": "Las tablas deben declararse con COMPRESS, NOLOGGING y TABLESPACE.",
+          "cite": "Oracle » Configuraciones de Tablas",
+          "fix": {
+            "type": "ensure_clause",
+            "locator": "(?is)(create\\s+table[\\s\\S]+?\\))",
+            "template": "${block}\nCOMPRESS NOLOGGING\nTABLESPACE ${tablespace}",
+            "bindings": ["tablespace"]
+          },
+          "autofix_safe": true
+        },
+        {
+          "id": "ORC-PK-EXISTS",
+          "desc": "La tabla debe tener PRIMARY KEY",
+          "pattern": "(?is)create\\s+table[\\s\\S]+?;[\\s\\S]*?primary\\s+key",
+          "must_match": true,
+          "severity": "error",
+          "explain": "Garantiza integridad y acceso eficiente.",
+          "quote": "Cada tabla debe contar con una clave primaria definida.",
+          "cite": "Oracle » Restricciones PK",
+          "fix": {
+            "type": "insert_after",
+            "locator": "(?is)(create\\s+table[\\s\\S]+?;)",
+            "template": "ALTER TABLE ${schema}.${table} ADD CONSTRAINT PK_${table} PRIMARY KEY (${pk_cols});",
+            "bindings": ["schema","table","pk_cols"]
+          },
+          "autofix_safe": false
+        },
+        {
+          "id": "ORC-IDX-NAME",
+          "desc": "Índices/PK con prefijo PK_/IDX_",
+          "pattern": "(?i)create\\s+unique\\s+index\\s+(?!PK_|IDX_)",
+          "severity": "warn",
+          "explain": "Homologa nomenclatura de objetos.",
+          "quote": "Los índices y PK deben nombrarse con prefijos PK_ e IDX_.",
+          "cite": "Oracle » Nomenclatura de Índices",
+          "fix": {
+            "type": "rename_suggest",
+            "locator": "(?is)create\\s+unique\\s+index\\s+(\\w+)\\s+on\\s+(?:(\\w+)\\.)?(\\w+)\\s*\\(([^)]+)\\)",
+            "template": "Sugerido: PK_${table}  o  IDX_${table}_${firstcol}",
+            "bindings": ["table","firstcol"]
+          },
+          "autofix_safe": false
+        },
+        {
+          "id": "ORC-PART-NAME",
+          "desc": "Partición debe iniciar con PT_ y cumplir longitud/caracteres",
+          "pattern": "(?i)\\bpartition\\s+(?!PT_[A-Z0-9_]{1,27}\\b)([A-Z0-9_]{1,30})",
+          "severity": "error",
+          "explain": "Estandariza la nomenclatura de particiones.",
+          "quote": "Nombre 4–30 caracteres, A–Z, 0–9 y _. Inicia con PT_ + columna de partición.",
+          "cite": "Oracle » Nomenclatura de Particiones",
+          "fix": {
+            "type": "replace_token",
+            "locator": "(?i)(\\bpartition\\s+)([A-Z0-9_]{1,30})",
+            "template": "${g1}PT_${partcol}_${suffix}",
+            "bindings": ["partcol","suffix"]
+          },
+          "autofix_safe": false
+        }
+      ]
+    },
+    {
+      "namespace": "powershell",
+      "applies_to": ["*.ps1"],
+      "rules": [
+        {
+          "id": "PS-CLEAR-HOST-FIRST",
+          "desc": "Clear-Host al inicio",
+          "pattern": "^(?i)\\s*clear-host",
+          "scope": "file_start",
+          "severity": "error",
+          "explain": "Estructura estándar de script.",
+          "quote": "Todo script inicia con Clear-Host.",
+          "cite": "PowerShell » Estructura",
+          "fix": {
+            "type": "insert_before",
+            "locator": "\\A",
+            "template": "Clear-Host\n"
+          },
+          "autofix_safe": true
+        }
+      ]
+    },
+    {
+      "namespace": "ipc",
+      "applies_to": ["*.prm","*.ipc.txt","*.wf.txt"],
+      "rules": [
+        {
+          "id": "IPC-PRM-HEADER",
+          "desc": ".prm con [Global] y variables $$PW_/$$PM_",
+          "pattern": "(?i)\\[Global\\]|\\$\\$PW_|\\$\\$PM_",
+          "must_match": true,
+          "severity": "error",
+          "explain": "Estructura de parámetros requerida.",
+          "quote": "El archivo .prm debe tener sección [Global] y variables $$PW_/$$PM_.",
+          "cite": "IPC » Parámetros",
+          "fix": {
+            "type": "insert_after",
+            "locator": "\\A",
+            "template": "[Global]\n$$PM_<VAR>=<VAL>\n"
+          },
+          "autofix_safe": false
+        }
       ]
     }
   ]

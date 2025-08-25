@@ -1,22 +1,32 @@
-# validator.py  (evalúa todos los namespaces)
-import sys, json, re, pathlib, urllib.request, os
+# validator/src/validator.py
+import sys, json, re, pathlib, urllib.request, os, fnmatch
 from pathlib import Path
-import fnmatch
+
+# --- localizar extractor.py y usar read_input si existe ---
+HERE = Path(__file__).resolve().parent.parent  # .../validator
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+try:
+    from extractor import read_input
+except Exception:
+    read_input = None  # fallback a _read_text
 
 FLAGS = re.I | re.M | re.S
 
-# -------- util: limpiar flags inline (?i)(?s)(?x) --------
+# -------- util: eliminar flags inline (?i)(?s)(?x)... del patrón --------
 def _strip_inline_flags(pat: str):
     if not pat:
         return "", 0
     mapping = {'i': re.I, 'm': re.M, 's': re.S, 'x': re.X, 'a': re.A, 'l': re.L, 'u': 0, 'U': 0, 't': 0}
     acc = 0
+    # scoped: (?imsxalu: ...) -> (?: ...), acumula flags
     def repl_scoped(m):
         nonlocal acc
         for ch in set(m.group(1)):
             acc |= mapping.get(ch.lower(), 0)
         return "(?:"
     pat = re.sub(r"\(\?([imxsaluULT]+):", repl_scoped, pat)
+    # global: (?imsxalu)
     def repl_global(m):
         nonlocal acc
         for ch in set(m.group(1)):
@@ -29,7 +39,8 @@ def _compile_pat(pat: str, base_flags: int = FLAGS):
     src, add = _strip_inline_flags(pat or "")
     return re.compile(src, base_flags | add)
 
-# ---------------- Heurísticas ----------------
+# ---------------- Heurísticas sin fences ----------------
+# (sin flags inline; usamos FLAGS al buscar)
 SQL_TOKENS = r"\b(CREATE|ALTER|COMMENT|GRANT|REVOKE|DROP|SELECT|INSERT|UPDATE|DELETE)\b|\bPARTITION\s+BY\b"
 IPC_TOKENS = r"^\s*\[Global\]\b|\$\$PM_|\$\$PW_"
 PS_TOKENS  = r"^\s*(Clear-Host|param\(|Write-Output|Get-ChildItem|Set-Content)\b"
@@ -46,14 +57,18 @@ def guess_inline_name(text: str) -> str:
 
 # ---------------- IO ----------------
 def _read_text(path_or_url: str):
+    # URL
     if isinstance(path_or_url, str) and path_or_url.startswith(("http://", "https://")):
         with urllib.request.urlopen(path_or_url) as r:
             return r.read().decode("utf-8", errors="ignore")
+    # Archivo existente
     p = pathlib.Path(path_or_url or "")
     if p.exists():
         return p.read_text(encoding="utf-8", errors="ignore")
+    # Inline sin fences
     if looks_like_code(path_or_url or ""):
         return path_or_url
+    # Stdin con "-"
     if path_or_url == "-":
         data = sys.stdin.read()
         if data:
@@ -64,7 +79,7 @@ def load_policy(path_or_url):
     data = json.loads(_read_text(path_or_url))
     return data, data.get("assist", {})
 
-# ---------------- Contexto ORACLE ----------------
+# ---------------- Contexto ORACLE (no inventar) ----------------
 def parse_oracle_ctx(text: str, extractors: dict):
     ctx = {"schema": "<SCHEMA>", "table": "<TABLE>", "columns": []}
     oracle_ext = (extractors or {}).get("oracle", {}) if extractors else {}
@@ -131,15 +146,23 @@ def render_fix(rule: dict, text: str, ctx: dict, assist: dict, first_match: re.M
     fx = rule.get("fix") or {}
     if not fx:
         return None
-    bind = binding_from_ctx(rule.get("id",""), ctx, assist)
-    if rule.get("id") in ("ORC-PART-NAME", "XML-PART-NAME") and first_match:
+
+    bind = binding_from_ctx(rule["id"], ctx, assist)
+
+    # particiones: usa token incumplido como sufijo
+    if rule["id"] in ("ORC-PART-NAME", "XML-PART-NAME") and first_match:
         offending = first_match.group(1)
         if offending and re.fullmatch(r"[A-Za-z0-9_]{1,30}", offending):
             bind["suffix"] = offending
+
     tpl = _sub_template_vars(fx.get("template", ""), bind)
+
     loc = fx.get("locator")
     if loc:
-        m = _compile_pat(loc).search(text or "")
+        try:
+            m = _compile_pat(loc).search(text or "")
+        except re.error:
+            m = None
         if m:
             last = m.lastindex or 0
             for i in range(1, last + 1):
@@ -147,6 +170,7 @@ def render_fix(rule: dict, text: str, ctx: dict, assist: dict, first_match: re.M
                 tpl = tpl.replace("${g" + str(i) + "}", gi if gi is not None else "")
             if last >= 1 and m.group(1) is not None:
                 tpl = tpl.replace("${block}", m.group(1))
+
     return tpl.strip() if tpl else None
 
 # ---------------- Evaluación de reglas ----------------
@@ -154,6 +178,7 @@ def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
     violations = []
     for r in ns.get("rules", []):
         try:
+            # flags del JSON + limpiar flags inline del patrón
             flag_map = {"i": re.I, "m": re.M, "s": re.S, "x": re.X, "a": re.A, "l": re.L, "u": 0}
             pat_src = r.get("pattern", "") or ""
             pat_src, inline_flags = _strip_inline_flags(pat_src)
@@ -189,8 +214,8 @@ def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
                     continue
                 fix = render_fix(r, text, ctx, assist, m)
                 violations.append({
-                    "id": r.get("id"),
-                    "desc": r.get("desc"),
+                    "id": r["id"],
+                    "desc": r["desc"],
                     "severity": r.get("severity", "warn"),
                     "cite": r.get("cite"),
                     "quote": r.get("quote"),
@@ -200,8 +225,8 @@ def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
             m = matches[0] if matches else None
             fix = render_fix(r, text, ctx, assist, m)
             violations.append({
-                "id": r.get("id"),
-                "desc": r.get("desc"),
+                "id": r["id"],
+                "desc": r["desc"],
                 "severity": r.get("severity", "warn"),
                 "cite": r.get("cite"),
                 "quote": r.get("quote"),
@@ -216,32 +241,50 @@ def main():
         print("- [error] INPUT-NO-CODE: Proporciona el artefacto en ```...``` o adjunta archivo.")
         sys.exit(1)
 
-    policy_path, target = sys.argv[1], sys.argv[2]
+    policy_path, target, *extra = sys.argv[1], sys.argv[2], sys.argv[3:]
     policy, assist = load_policy(policy_path)
 
+    # 1) Lectura clásica
     text = _read_text(target)
+
+    # 2) Ingesta robusta con extractor (archivos extra como adjuntos)
+    if (text is None or not text.strip()) and read_input is not None:
+        attachments = [{"filename": os.path.basename(p), "path": p} for p in extra if os.path.exists(p)]
+        env_attach = os.environ.get("VALIDATOR_ATTACH")
+        if env_attach:
+            try:
+                attachments.extend(json.loads(env_attach))
+            except Exception:
+                pass
+        try:
+            msg_text = target if looks_like_code(target or "") else None
+            cli_file = target if os.path.exists(target) else None
+            text = read_input(message_text=msg_text, attachments=attachments, cli_file=cli_file)
+        except Exception:
+            text = None
+
     if text is None or not text.strip():
         print("Veredicto: NO CUMPLE")
         print("- [error] INPUT-NO-CODE: Proporciona el artefacto en ```...``` o adjunta archivo.")
         sys.exit(2)
 
+    # nombre lógico para applies_to
     if pathlib.Path(target).exists():
         name = os.path.basename(target)
     elif isinstance(target, str) and target.startswith(("http://", "https://")):
         name = os.path.basename(target.split("?")[0])
     else:
-        name = guess_inline_name(text)  # p.ej. inline.sql
+        name = guess_inline_name(text)
 
+    # contexto Oracle (sin inventar)
     ctx = parse_oracle_ctx(text, assist.get("extractors", {}))
 
-    # Evalúa TODOS los namespaces; si no hay, usa reglas de raíz
-    namespaces = policy.get("namespaces")
-    if not namespaces:
-        namespaces = [{"applies_to": ["*"], "rules": policy.get("rules", [])}]
-
-    selected = [ns for ns in namespaces if ns.get("rules")]
+    # eval por namespaces aplicables
     all_viol = []
-    for ns in selected:
+    for ns in policy.get("namespaces", []):
+        pats = ns.get("applies_to")
+        if pats and not any(fnmatch.fnmatch(name, pat) for pat in pats):
+            continue
         all_viol.extend(eval_rules(text, ns, ctx, assist))
 
     prefix = policy.get("output", {}).get("prefix", "Veredicto: ")
@@ -264,4 +307,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

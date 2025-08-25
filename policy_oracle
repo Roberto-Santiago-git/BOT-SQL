@@ -14,324 +14,331 @@
     "verdict_labels": { "pass": "CUMPLE", "fail": "NO CUMPLE" }
   },
   "file_match": ["**/*.sql", "**/*.ddl", "**/*.pkg", "**/*.pks", "**/*.pkb"],
-  "rules": [
+
+  "namespaces": [
     {
-      "id": "BAN_NOLOGGING",
-      "description": "Prohíbe NOLOGGING en DDL.",
-      "type": "regex_forbidden",
-      "pattern": "\\bNOLOGGING\\b",
-      "flags": "is",
-      "scope": ["ddl.table", "ddl.index"],
-      "severity": "BLOCKER",
-      "message": "NOLOGGING prohibido en PROD. Usa LOGGING.",
-      "autofix": { "type": "replace", "search": "\\bNOLOGGING\\b", "replace": "LOGGING" }
-    },
-    {
-      "id": "ENFORCE_TABLESPACE_TABLES",
-      "description": "Tablas al TBS de datos aprobado.",
-      "type": "requires_when",
-      "when": "CREATE\\s+TABLE\\b",
-      "require": "TABLESPACE\\s+(TBS_DESP_01_DAT)\\b",
-      "flags": "is",
-      "scope": ["ddl.table"],
-      "severity": "BLOCKER",
-      "message": "TABLESPACE de tablas debe ser TBS_DESP_01_DAT."
-    },
-    {
-      "id": "ENFORCE_TABLESPACE_INDEXES",
-      "description": "Índices al TBS de índices aprobado.",
-      "type": "requires_when",
-      "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\b",
-      "require": "TABLESPACE\\s+(TBS_DESP_01_IDX)\\b",
-      "flags": "is",
-      "scope": ["ddl.index"],
-      "severity": "BLOCKER",
-      "message": "TABLESPACE de índices debe ser TBS_DESP_01_IDX."
-    },
-    {
-      "id": "BAN_COMPRESS_TABLE",
-      "description": "COMPRESS en tablas requiere waiver.",
-      "type": "regex_forbidden",
-      "pattern": "\\bCREATE\\s+TABLE\\b[\\s\\S]*?\\bCOMPRESS\\b",
-      "flags": "is",
-      "scope": ["ddl.table"],
-      "severity": "MAJOR",
-      "message": "COMPRESS en tablas requiere excepción documentada."
-    },
-    {
-      "id": "REQUIRE_PK_NAMING",
-      "description": "PRIMARY KEY con prefijo PK_.",
-      "type": "requires_when",
-      "when": "PRIMARY\\s+KEY\\b",
-      "require": "CONSTRAINT\\s+PK_[A-Z0-9_]+\\b",
-      "flags": "is",
-      "scope": ["ddl.table"],
-      "severity": "MAJOR",
-      "message": "Usa nombre de constraint PRIMARY KEY con prefijo PK_."
-    },
-    {
-      "id": "REQUIRE_UK_NAMING",
-      "description": "UNIQUE KEY con prefijo UK_.",
-      "type": "requires_when",
-      "when": "ADD\\s+CONSTRAINT\\s+[A-Z0-9_]+\\s+UNIQUE\\b",
-      "require": "ADD\\s+CONSTRAINT\\s+UK_[A-Z0-9_]+\\s+UNIQUE\\b",
-      "flags": "is",
-      "scope": ["ddl.table"],
-      "severity": "MINOR",
-      "message": "Usa nombre de constraint UNIQUE con prefijo UK_."
-    },
-    {
-      "id": "REQUIRE_INDEX_NAMING",
-      "description": "Índices deben iniciar con IDX_ o PK_.",
-      "type": "regex_forbidden",
-      "pattern": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+(?!(?:[A-Z0-9_]+\\.)?(?:IDX_|PK_))[A-Z0-9_.]+",
-      "flags": "is",
-      "scope": ["ddl.index"],
-      "severity": "MAJOR",
-      "message": "Nombra índices como IDX_* (o PK_* si soporta PK)."
-    },
-    {
-      "id": "REQUIRE_SCHEMA_QUALIFIED_DDL",
-      "description": "DDL calificado con esquema.",
-      "type": "regex_forbidden",
-      "pattern": "CREATE\\s+(?:TABLE|VIEW|SEQUENCE|TRIGGER|INDEX)\\s+(?!CPPGS\\.)[A-Z0-9_]+",
-      "flags": "is",
-      "scope": ["ddl.table", "ddl.index", "ddl.other"],
-      "severity": "MAJOR",
-      "message": "Califica objetos con esquema (p.ej., CPPGS.TABLA)."
-    },
-    {
-  "id": "BAN_SELECT_STAR",
-  "description": "Prohíbe SELECT *.",
-  "type": "regex_forbidden",
-  "pattern": "\\bSELECT\\s*\\*",
-  "flags": "i",
-  "severity": "MAJOR",
-  "message": "No uses SELECT *. Lista columnas explícitas."
-}
-,
-    {
-      "id": "BAN_PARALLEL_HINTS",
-      "description": "Prohíbe paralelismo forzado.",
-      "type": "regex_forbidden_any",
-      "patterns": ["/\\*\\+\\s*PARALLEL\\b", "\\bALTER\\s+SESSION\\s+.*\\bPARALLEL\\b"],
-      "flags": "is",
-      "scope": ["dml", "plsql", "session"],
-      "severity": "BLOCKER",
-      "message": "Paralelismo forzado no permitido en apps OLTP."
-    },
-    {
-      "id": "REQUIRE_TABLE_COMMENT",
-      "description": "Cada tabla nueva debe tener COMMENT ON TABLE.",
-      "type": "requires_when_group",
-      "group": [
+      "id": "oracle_sql",
+      "applies_to": ["**/*.sql", "*.sql", "inline.sql"],
+      "rules": [
         {
-          "when": "CREATE\\s+TABLE\\s+(CPPGS\\.[A-Z0-9_]+)",
-          "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';"
+          "id": "BAN_NOLOGGING",
+          "description": "Prohíbe NOLOGGING en DDL.",
+          "type": "regex_forbidden",
+          "pattern": "\\bNOLOGGING\\b",
+          "flags": "is",
+          "scope": ["ddl.table", "ddl.index"],
+          "severity": "BLOCKER",
+          "message": "NOLOGGING prohibido en PROD. Usa LOGGING.",
+          "autofix": { "type": "replace", "search": "\\bNOLOGGING\\b", "replace": "LOGGING" }
+        },
+        {
+          "id": "ENFORCE_TABLESPACE_TABLES",
+          "description": "Tablas al TBS de datos aprobado.",
+          "type": "requires_when",
+          "when": "CREATE\\s+TABLE\\b",
+          "require": "TABLESPACE\\s+(TBS_DESP_01_DAT)\\b",
+          "flags": "is",
+          "scope": ["ddl.table"],
+          "severity": "BLOCKER",
+          "message": "TABLESPACE de tablas debe ser TBS_DESP_01_DAT."
+        },
+        {
+          "id": "ENFORCE_TABLESPACE_INDEXES",
+          "description": "Índices al TBS de índices aprobado.",
+          "type": "requires_when",
+          "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\b",
+          "require": "TABLESPACE\\s+(TBS_DESP_01_IDX)\\b",
+          "flags": "is",
+          "scope": ["ddl.index"],
+          "severity": "BLOCKER",
+          "message": "TABLESPACE de índices debe ser TBS_DESP_01_IDX."
+        },
+        {
+          "id": "BAN_COMPRESS_TABLE",
+          "description": "COMPRESS en tablas requiere waiver.",
+          "type": "regex_forbidden",
+          "pattern": "\\bCREATE\\s+TABLE\\b[\\s\\S]*?\\bCOMPRESS\\b",
+          "flags": "is",
+          "scope": ["ddl.table"],
+          "severity": "MAJOR",
+          "message": "COMPRESS en tablas requiere excepción documentada."
+        },
+        {
+          "id": "REQUIRE_PK_NAMING",
+          "description": "PRIMARY KEY con prefijo PK_.",
+          "type": "requires_when",
+          "when": "PRIMARY\\s+KEY\\b",
+          "require": "CONSTRAINT\\s+PK_[A-Z0-9_]+\\b",
+          "flags": "is",
+          "scope": ["ddl.table"],
+          "severity": "MAJOR",
+          "message": "Usa nombre de constraint PRIMARY KEY con prefijo PK_."
+        },
+        {
+          "id": "REQUIRE_UK_NAMING",
+          "description": "UNIQUE KEY con prefijo UK_.",
+          "type": "requires_when",
+          "when": "ADD\\s+CONSTRAINT\\s+[A-Z0-9_]+\\s+UNIQUE\\b",
+          "require": "ADD\\s+CONSTRAINT\\s+UK_[A-Z0-9_]+\\s+UNIQUE\\b",
+          "flags": "is",
+          "scope": ["ddl.table"],
+          "severity": "MINOR",
+          "message": "Usa nombre de constraint UNIQUE con prefijo UK_."
+        },
+        {
+          "id": "REQUIRE_INDEX_NAMING",
+          "description": "Índices deben iniciar con IDX_ o PK_.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+(?!(?:[A-Z0-9_]+\\.)?(?:IDX_|PK_))[A-Z0-9_.]+",
+          "flags": "is",
+          "scope": ["ddl.index"],
+          "severity": "MAJOR",
+          "message": "Nombra índices como IDX_* (o PK_* si soporta PK)."
+        },
+        {
+          "id": "REQUIRE_SCHEMA_QUALIFIED_DDL",
+          "description": "DDL calificado con esquema.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+(?:TABLE|VIEW|SEQUENCE|TRIGGER|INDEX)\\s+(?!CPPGS\\.)[A-Z0-9_]+",
+          "flags": "is",
+          "scope": ["ddl.table", "ddl.index", "ddl.other"],
+          "severity": "MAJOR",
+          "message": "Califica objetos con esquema (p.ej., CPPGS.TABLA)."
+        },
+        {
+          "id": "BAN_SELECT_STAR",
+          "description": "Prohíbe SELECT *.",
+          "type": "regex_forbidden",
+          "pattern": "\\bSELECT\\s*\\*",
+          "flags": "i",
+          "severity": "MAJOR",
+          "message": "No uses SELECT *. Lista columnas explícitas."
+        },
+        {
+          "id": "BAN_PARALLEL_HINTS",
+          "description": "Prohíbe paralelismo forzado.",
+          "type": "regex_forbidden_any",
+          "patterns": ["/\\*\\+\\s*PARALLEL\\b", "\\bALTER\\s+SESSION\\s+.*\\bPARALLEL\\b"],
+          "flags": "is",
+          "scope": ["dml", "plsql", "session"],
+          "severity": "BLOCKER",
+          "message": "Paralelismo forzado no permitido en apps OLTP."
+        },
+        {
+          "id": "REQUIRE_TABLE_COMMENT",
+          "description": "Cada tabla nueva debe tener COMMENT ON TABLE.",
+          "type": "requires_when_group",
+          "group": [
+            {
+              "when": "CREATE\\s+TABLE\\s+(CPPGS\\.[A-Z0-9_]+)",
+              "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';"
+            }
+          ],
+          "flags": "is",
+          "scope": ["ddl.table"],
+          "severity": "MINOR",
+          "message": "Agrega COMMENT ON TABLE con descripción."
+        },
+        {
+          "id": "BAN_ORDER_BY_POSITION",
+          "description": "Prohíbe ORDER BY por número.",
+          "type": "regex_forbidden",
+          "pattern": "\\bORDER\\s+BY\\s+\\d+(\\s*,\\s*\\d+)*\\b",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Usa columnas explícitas en ORDER BY."
+        },
+        {
+          "id": "REQUIRE_WHERE_UPDATE",
+          "description": "UPDATE debe tener WHERE.",
+          "type": "requires_when",
+          "when": "\\bUPDATE\\b",
+          "require": "\\bWHERE\\b",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Evita updates masivos sin WHERE."
+        },
+        {
+          "id": "REQUIRE_WHERE_DELETE",
+          "description": "DELETE debe tener WHERE.",
+          "type": "requires_when",
+          "when": "\\bDELETE\\b",
+          "require": "\\bWHERE\\b",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Evita deletes masivos sin WHERE."
+        },
+        {
+          "id": "BAN_INSERT_NO_COLUMN_LIST",
+          "description": "INSERT sin lista de columnas.",
+          "type": "regex_forbidden_any",
+          "patterns": [
+            "\\bINSERT\\s+INTO\\s+[A-Z0-9_.]+\\s+VALUES\\b",
+            "\\bINSERT\\s+INTO\\s+[A-Z0-9_.]+\\s+SELECT\\b"
+          ],
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Incluye lista de columnas en INSERT."
+        },
+        {
+          "id": "BAN_WHEN_OTHERS_NULL",
+          "description": "WHEN OTHERS THEN NULL.",
+          "type": "regex_forbidden",
+          "pattern": "\\bWHEN\\s+OTHERS\\s+THEN\\s+NULL\\b",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Registra y/o propaga el error; no lo silencies."
+        },
+        {
+          "id": "REQUIRE_AUDIT_PKG_IN_SP",
+          "description": "Bitácora corporativa en SP/PKG.",
+          "type": "requires_when",
+          "when": "CREATE\\s+OR\\s+REPLACE\\s+(PROCEDURE|PACKAGE)\\b",
+          "require": "\\bPKG_BITACORA_PROCESO\\.",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Llama a PKG_BITACORA_PROCESO en inicio/fin y on-error."
+        },
+        {
+          "id": "ENFORCE_TABLE_NAMING",
+          "description": "Prefijos de tabla TBL_/TSTG_.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+TABLE\\s+(?:[A-Z0-9_]+\\.)?(?!TBL_|TSTG_)[A-Z0-9_]+",
+          "flags": "is",
+          "severity": "MAJOR",
+          "message": "Usa prefijos TBL_ o TSTG_."
+        },
+        {
+          "id": "ENFORCE_PACKAGE_NAMING",
+          "description": "Package con PKG_.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+OR\\s+REPLACE\\s+PACKAGE\\s+(?:[A-Z0-9_]+\\.)?(?!PKG_)[A-Z0-9_]+",
+          "flags": "is",
+          "severity": "MAJOR",
+          "message": "Usa prefijo PKG_."
+        },
+        {
+          "id": "ENFORCE_PROC_NAMING",
+          "description": "Procedure con SP_.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+OR\\s+REPLACE\\s+PROCEDURE\\s+(?:[A-Z0-9_]+\\.)?(?!SP_)[A-Z0-9_]+",
+          "flags": "is",
+          "severity": "MINOR",
+          "message": "Usa prefijo SP_."
+        },
+        {
+          "id": "ENFORCE_FUNC_NAMING",
+          "description": "Function con F_.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+(?:[A-Z0-9_]+\\.)?(?!F_)[A-Z0-9_]+",
+          "flags": "is",
+          "severity": "MINOR",
+          "message": "Usa prefijo F_."
+        },
+        {
+          "id": "BAN_LOOSE_ATTRIBUTES",
+          "description": "Atributos DDL sueltos.",
+          "type": "regex_forbidden",
+          "pattern": "^(?!.*\\b(CREATE|ALTER)\\b).*(\\bCOMPRESS\\b|\\bNOLOGGING\\b|\\bTABLESPACE\\s+[A-Z0-9_]+)",
+          "flags": "im",
+          "severity": "BLOCKER",
+          "message": "COMPRESS/NOLOGGING/TABLESPACE solo dentro de CREATE/ALTER."
+        },
+        {
+          "id": "REQUIRE_COMPRESS_FOR_MULTI_COL_INDEX",
+          "description": "Índice multicolumna requiere COMPRESS n (n=cols−1).",
+          "type": "requires_when",
+          "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX[\\s\\S]*?\\([\\s\\S]*?,[\\s\\S]*?\\)",
+          "require": "\\bCOMPRESS\\s+\\d+\\b",
+          "flags": "is",
+          "scope": ["ddl.index"],
+          "severity": "BLOCKER",
+          "message": "Agrega COMPRESS n en índices compuestos."
+        },
+        {
+          "id": "REQUIRE_COMPRESS_1_FOR_2COLS",
+          "description": "Índice de 2 columnas debe usar COMPRESS 1.",
+          "type": "requires_when",
+          "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+[A-Z0-9_.]+\\s*\\(\\s*(?:[^(),]+\\s*,){1}\\s*[^(),]+\\s*\\)",
+          "require": "\\bCOMPRESS\\s+1\\b",
+          "flags": "is",
+          "scope": ["ddl.index"],
+          "severity": "BLOCKER",
+          "message": "Índice de 2 columnas debe declarar COMPRESS 1.",
+          "autofix": { "type": "replace", "search": "\\bCOMPRESS\\s+\\d+\\b", "replace": "COMPRESS 1" }
+        },
+        {
+          "id": "REQUIRE_COMPRESS_2_FOR_3COLS",
+          "description": "Índice de 3 columnas debe usar COMPRESS 2.",
+          "type": "requires_when",
+          "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+[A-Z0-9_.]+\\s*\\(\\s*(?:[^(),]+\\s*,){2}\\s*[^(),]+\\s*\\)",
+          "require": "\\bCOMPRESS\\s+2\\b",
+          "flags": "is",
+          "scope": ["ddl.index"],
+          "severity": "BLOCKER",
+          "message": "Índice de 3 columnas debe declarar COMPRESS 2.",
+          "autofix": { "type": "replace", "search": "\\bCOMPRESS\\s+\\d+\\b", "replace": "COMPRESS 2" }
+        },
+        {
+          "id": "REQUIRE_COMPRESS_3_FOR_4COLS",
+          "description": "Índice de 4 columnas debe usar COMPRESS 3.",
+          "type": "requires_when",
+          "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+[A-Z0-9_.]+\\s*\\(\\s*(?:[^(),]+\\s*,){3}\\s*[^(),]+\\s*\\)",
+          "require": "\\bCOMPRESS\\s+3\\b",
+          "flags": "is",
+          "scope": ["ddl.index"],
+          "severity": "BLOCKER",
+          "message": "Índice de 4 columnas debe declarar COMPRESS 3.",
+          "autofix": { "type": "replace", "search": "\\bCOMPRESS\\s+\\d+\\b", "replace": "COMPRESS 3" }
+        },
+        {
+          "id": "REQUIRE_COMPRESS_4_FOR_5COLS",
+          "description": "Índice de 5 columnas debe usar COMPRESS 4.",
+          "type": "requires_when",
+          "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+[A-Z0-9_.]+\\s*\\(\\s*(?:[^(),]+\\s*,){4}\\s*[^(),]+\\s*\\)",
+          "require": "\\bCOMPRESS\\s+4\\b",
+          "flags": "is",
+          "scope": ["ddl.index"],
+          "severity": "BLOCKER",
+          "message": "Índice de 5 columnas debe declarar COMPRESS 4.",
+          "autofix": { "type": "replace", "search": "\\bCOMPRESS\\s+\\d+\\b", "replace": "COMPRESS 4" }
+        },
+        {
+          "id": "ORC-REQUIRE-COMMIT-AFTER-DML",
+          "description": "Solo exigir COMMIT cuando hay transacción explícita con DML.",
+          "type": "requires_when_group",
+          "group": [
+            { "when": "BEGIN\\s+TRANSACTION\\b[\\s\\S]*?(INSERT|UPDATE|DELETE|MERGE)\\b", "require_template": "COMMIT\\b" }
+          ],
+          "flags": "is",
+          "scope": ["session", "dml"],
+          "severity": "MAJOR",
+          "message": "Falta COMMIT tras transacción con DML."
+        },
+        {
+          "id": "ORC-GRANT-NO-COMMIT",
+          "description": "No exigir COMMIT para GRANT/DDL.",
+          "type": "regex_forbidden",
+          "pattern": "BEGIN\\s+TRANSACTION\\b[\\s\\S]*?GRANT\\b[\\s\\S]*?COMMIT\\b",
+          "flags": "is",
+          "scope": ["session"],
+          "severity": "MINOR",
+          "message": "No añadas COMMIT por GRANT; los DDL ya hacen commit implícito."
+        },
+        {
+          "id": "ORC-TSQL-BEGIN-TRANSACTION",
+          "description": "BEGIN TRANSACTION es T-SQL; no Oracle.",
+          "type": "regex_forbidden",
+          "pattern": "\\bBEGIN\\s+TRANSACTION\\b",
+          "flags": "is",
+          "scope": ["session"],
+          "severity": "MAJOR",
+          "message": "En Oracle usa SET TRANSACTION/SAVEPOINT; evita 'BEGIN TRANSACTION'."
         }
-      ],
-      "flags": "is",
-      "scope": ["ddl.table"],
-      "severity": "MINOR",
-      "message": "Agrega COMMENT ON TABLE con descripción."
-    },
-    {
-      "id": "BAN_ORDER_BY_POSITION",
-      "description": "Prohíbe ORDER BY por número.",
-      "type": "regex_forbidden",
-      "pattern": "\\bORDER\\s+BY\\s+\\d+(\\s*,\\s*\\d+)*\\b",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Usa columnas explícitas en ORDER BY."
-    },
-    {
-      "id": "REQUIRE_WHERE_UPDATE",
-      "description": "UPDATE debe tener WHERE.",
-      "type": "requires_when",
-      "when": "\\bUPDATE\\b",
-      "require": "\\bWHERE\\b",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Evita updates masivos sin WHERE."
-    },
-    {
-      "id": "REQUIRE_WHERE_DELETE",
-      "description": "DELETE debe tener WHERE.",
-      "type": "requires_when",
-      "when": "\\bDELETE\\b",
-      "require": "\\bWHERE\\b",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Evita deletes masivos sin WHERE."
-    },
-    {
-      "id": "BAN_INSERT_NO_COLUMN_LIST",
-      "description": "INSERT sin lista de columnas.",
-      "type": "regex_forbidden_any",
-      "patterns": [
-        "\\bINSERT\\s+INTO\\s+[A-Z0-9_.]+\\s+VALUES\\b",
-        "\\bINSERT\\s+INTO\\s+[A-Z0-9_.]+\\s+SELECT\\b"
-      ],
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Incluye lista de columnas en INSERT."
-    },
-    {
-      "id": "BAN_WHEN_OTHERS_NULL",
-      "description": "WHEN OTHERS THEN NULL.",
-      "type": "regex_forbidden",
-      "pattern": "\\bWHEN\\s+OTHERS\\s+THEN\\s+NULL\\b",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Registra y/o propaga el error; no lo silencies."
-    },
-    {
-      "id": "REQUIRE_AUDIT_PKG_IN_SP",
-      "description": "Bitácora corporativa en SP/PKG.",
-      "type": "requires_when",
-      "when": "CREATE\\s+OR\\s+REPLACE\\s+(PROCEDURE|PACKAGE)\\b",
-      "require": "\\bPKG_BITACORA_PROCESO\\.",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Llama a PKG_BITACORA_PROCESO en inicio/fin y on-error."
-    },
-    {
-      "id": "ENFORCE_TABLE_NAMING",
-      "description": "Prefijos de tabla TBL_/TSTG_.",
-      "type": "regex_forbidden",
-      "pattern": "CREATE\\s+TABLE\\s+(?:[A-Z0-9_]+\\.)?(?!TBL_|TSTG_)[A-Z0-9_]+",
-      "flags": "is",
-      "severity": "MAJOR",
-      "message": "Usa prefijos TBL_ o TSTG_."
-    },
-    {
-      "id": "ENFORCE_PACKAGE_NAMING",
-      "description": "Package con PKG_.",
-      "type": "regex_forbidden",
-      "pattern": "CREATE\\s+OR\\s+REPLACE\\s+PACKAGE\\s+(?:[A-Z0-9_]+\\.)?(?!PKG_)[A-Z0-9_]+",
-      "flags": "is",
-      "severity": "MAJOR",
-      "message": "Usa prefijo PKG_."
-    },
-    {
-      "id": "ENFORCE_PROC_NAMING",
-      "description": "Procedure con SP_.",
-      "type": "regex_forbidden",
-      "pattern": "CREATE\\s+OR\\s+REPLACE\\s+PROCEDURE\\s+(?:[A-Z0-9_]+\\.)?(?!SP_)[A-Z0-9_]+",
-      "flags": "is",
-      "severity": "MINOR",
-      "message": "Usa prefijo SP_."
-    },
-    {
-      "id": "ENFORCE_FUNC_NAMING",
-      "description": "Function con F_.",
-      "type": "regex_forbidden",
-      "pattern": "CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+(?:[A-Z0-9_]+\\.)?(?!F_)[A-Z0-9_]+",
-      "flags": "is",
-      "severity": "MINOR",
-      "message": "Usa prefijo F_."
-    },
-    {
-      "id": "BAN_LOOSE_ATTRIBUTES",
-      "description": "Atributos DDL sueltos.",
-      "type": "regex_forbidden",
-      "pattern": "^(?!.*\\b(CREATE|ALTER)\\b).*(\\bCOMPRESS\\b|\\bNOLOGGING\\b|\\bTABLESPACE\\s+[A-Z0-9_]+)",
-      "flags": "im",
-      "severity": "BLOCKER",
-      "message": "COMPRESS/NOLOGGING/TABLESPACE solo dentro de CREATE/ALTER."
-    },
-    {
-      "id": "REQUIRE_COMPRESS_FOR_MULTI_COL_INDEX",
-      "description": "Índice multicolumna requiere COMPRESS n (n=cols−1).",
-      "type": "requires_when",
-      "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX[\\s\\S]*?\\([\\s\\S]*?,[\\s\\S]*?\\)",
-      "require": "\\bCOMPRESS\\s+\\d+\\b",
-      "flags": "is",
-      "scope": ["ddl.index"],
-      "severity": "BLOCKER",
-      "message": "Agrega COMPRESS n en índices compuestos."
-    },
-    {
-      "id": "REQUIRE_COMPRESS_1_FOR_2COLS",
-      "description": "Índice de 2 columnas debe usar COMPRESS 1.",
-      "type": "requires_when",
-      "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+[A-Z0-9_.]+\\s*\\(\\s*(?:[^(),]+\\s*,){1}\\s*[^(),]+\\s*\\)",
-      "require": "\\bCOMPRESS\\s+1\\b",
-      "flags": "is",
-      "scope": ["ddl.index"],
-      "severity": "BLOCKER",
-      "message": "Índice de 2 columnas debe declarar COMPRESS 1.",
-      "autofix": { "type": "replace", "search": "\\bCOMPRESS\\s+\\d+\\b", "replace": "COMPRESS 1" }
-    },
-    {
-      "id": "REQUIRE_COMPRESS_2_FOR_3COLS",
-      "description": "Índice de 3 columnas debe usar COMPRESS 2.",
-      "type": "requires_when",
-      "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+[A-Z0-9_.]+\\s*\\(\\s*(?:[^(),]+\\s*,){2}\\s*[^(),]+\\s*\\)",
-      "require": "\\bCOMPRESS\\s+2\\b",
-      "flags": "is",
-      "scope": ["ddl.index"],
-      "severity": "BLOCKER",
-      "message": "Índice de 3 columnas debe declarar COMPRESS 2.",
-      "autofix": { "type": "replace", "search": "\\bCOMPRESS\\s+\\d+\\b", "replace": "COMPRESS 2" }
-    },
-    {
-      "id": "REQUIRE_COMPRESS_3_FOR_4COLS",
-      "description": "Índice de 4 columnas debe usar COMPRESS 3.",
-      "type": "requires_when",
-      "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+[A-Z0-9_.]+\\s*\\(\\s*(?:[^(),]+\\s*,){3}\\s*[^(),]+\\s*\\)",
-      "require": "\\bCOMPRESS\\s+3\\b",
-      "flags": "is",
-      "scope": ["ddl.index"],
-      "severity": "BLOCKER",
-      "message": "Índice de 4 columnas debe declarar COMPRESS 3.",
-      "autofix": { "type": "replace", "search": "\\bCOMPRESS\\s+\\d+\\b", "replace": "COMPRESS 3" }
-    },
-    {
-      "id": "REQUIRE_COMPRESS_4_FOR_5COLS",
-      "description": "Índice de 5 columnas debe usar COMPRESS 4.",
-      "type": "requires_when",
-      "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+[A-Z0-9_.]+\\s*\\(\\s*(?:[^(),]+\\s*,){4}\\s*[^(),]+\\s*\\)",
-      "require": "\\bCOMPRESS\\s+4\\b",
-      "flags": "is",
-      "scope": ["ddl.index"],
-      "severity": "BLOCKER",
-      "message": "Índice de 5 columnas debe declarar COMPRESS 4.",
-      "autofix": { "type": "replace", "search": "\\bCOMPRESS\\s+\\d+\\b", "replace": "COMPRESS 4" }
-    },
-    {
-      "id": "ORC-REQUIRE-COMMIT-AFTER-DML",
-      "description": "Solo exigir COMMIT cuando hay transacción explícita con DML.",
-      "type": "requires_when_group",
-      "group": [
-        { "when": "BEGIN\\s+TRANSACTION\\b[\\s\\S]*?(INSERT|UPDATE|DELETE|MERGE)\\b", "require_template": "COMMIT\\b" }
-      ],
-      "flags": "is",
-      "scope": ["session", "dml"],
-      "severity": "MAJOR",
-      "message": "Falta COMMIT tras transacción con DML."
-    },
-    {
-      "id": "ORC-GRANT-NO-COMMIT",
-      "description": "No exigir COMMIT para GRANT/DDL.",
-      "type": "regex_forbidden",
-      "pattern": "BEGIN\\s+TRANSACTION\\b[\\s\\S]*?GRANT\\b[\\s\\S]*?COMMIT\\b",
-      "flags": "is",
-      "scope": ["session"],
-      "severity": "MINOR",
-      "message": "No añadas COMMIT por GRANT; los DDL ya hacen commit implícito."
-    },
-    {
-      "id": "ORC-TSQL-BEGIN-TRANSACTION",
-      "description": "BEGIN TRANSACTION es T-SQL; no Oracle.",
-      "type": "regex_forbidden",
-      "pattern": "\\bBEGIN\\s+TRANSACTION\\b",
-      "flags": "is",
-      "scope": ["session"],
-      "severity": "MAJOR",
-      "message": "En Oracle usa SET TRANSACTION/SAVEPOINT; evita 'BEGIN TRANSACTION'."
+      ]
     }
   ],
+
   "input_extraction": {
     "order": ["code_fence", "attachment", "raw_url"],
     "code_fence": { "patterns": ["```sql", "```plsql", "```", "BEGIN", "CREATE OR REPLACE"] },
@@ -343,4 +350,5 @@
     "sections": ["Resumen", "Hallazgos", "Cómo corregir", "Snippet sugerido"]
   }
 }
+
 

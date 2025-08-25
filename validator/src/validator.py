@@ -2,33 +2,51 @@
 import sys, json, re, pathlib, urllib.request, os, fnmatch
 from pathlib import Path
 
-# ---- localizar extractor.read_input si existe (soporta layouts distintos) ----
+# ---- localizar extractor.read_input si existe ----
 THIS = Path(__file__).resolve()
-BASES = [THIS.parent, THIS.parent.parent]  # p.ej. ...\validator\src y ...\validator
+BASES = [THIS.parent, THIS.parent.parent]
 for b in BASES:
-    if str(b) not in sys.path:
-        sys.path.insert(0, str(b))
+    p = str(b)
+    if p not in sys.path:
+        sys.path.insert(0, p)
 try:
     from extractor import read_input  # validator/extractor.py
 except Exception:
-    read_input = None  # fallback a _read_text si no está
+    read_input = None  # fallback
 
 FLAGS = re.I | re.M | re.S
 
 def _strip_inline_flags(pat: str):
     """
-    Quita banderas inline (?i)(?m)(?s)(?x) en cualquier posición,
-    acumula los flags y devuelve (pat_limpio, flags).
+    Convierte flags inline globales y de alcance (?i)(?m)(?s)(?x)(?a)(?l)(?u)
+    y (?i: ...), etc., a flags de compile(). Devuelve (pat_limpio, flags).
     """
-    mapping = {'i': re.I, 'm': re.M, 's': re.S, 'x': re.X}
+    if not pat:
+        return "", 0
+    mapping = {
+        'i': re.I, 'm': re.M, 's': re.S, 'x': re.X,
+        'a': re.A, 'l': re.L, 'u': 0, 'U': 0, 't': 0  # u/U/t: ignorar en Py3
+    }
     acc = 0
-    def repl(m):
+
+    # scoped flags: (?imsxalu: ... )  -> (?: ... )
+    def repl_scoped(m):
         nonlocal acc
-        for ch in set(m.group(1).lower()):
-            acc |= mapping.get(ch, 0)
-        return ""  # elimina la secuencia (?imsx)
-    clean = re.sub(r"\(\?([imxs]+)\)", repl, pat or "")
-    return clean, acc
+        for ch in set(m.group(1)):
+            acc |= mapping.get(ch.lower(), 0)
+        return "(?:"
+
+    pat = re.sub(r"\(\?([imxsaluULT]+):", repl_scoped, pat)
+
+    # global flags en cualquier posición: (?imsxalu)
+    def repl_global(m):
+        nonlocal acc
+        for ch in set(m.group(1)):
+            acc |= mapping.get(ch.lower(), 0)
+        return ""
+
+    pat = re.sub(r"\(\?([imxsaluULT]+)\)", repl_global, pat)
+    return pat, acc
 
 # ---------------- Heurísticas sin flags inline ----------------
 SQL_TOKENS = r"\b(CREATE|ALTER|COMMENT|GRANT|REVOKE|DROP|SELECT|INSERT|UPDATE|DELETE)\b|\bPARTITION\s+BY\b"
@@ -98,7 +116,7 @@ def binding_from_ctx(rule_id: str, ctx: dict, assist: dict):
     b = {}
     if rule_id == "ORC-SELECT-NO-STAR":
         b["table"] = ctx.get("table", "<TABLE>")
-        b["columns_or_placeholder"] = ", ".join(ctx["columns"]) if ctx.get("columns"]) else "<col1, col2, ...>"
+        b["columns_or_placeholder"] = ", ".join(ctx["columns"]) if ctx.get("columns") else "<col1, col2, ...>"
     elif rule_id == "ORC-PK-EXISTS":
         b["schema"] = ctx.get("schema", "<SCHEMA>")
         b["table"]  = ctx.get("table", "<TABLE>")
@@ -155,16 +173,25 @@ def render_fix(rule: dict, text: str, ctx: dict, assist: dict, first_match: re.M
 def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
     violations = []
     for r in ns.get("rules", []):
-        # respetar flags del JSON y limpiar flags inline dentro del patrón
-        flag_map = {"i": re.I, "m": re.M, "s": re.S, "x": re.X}
-        pat_src = r.get("pattern", "") or ""
-        pat_src, inline_flags = _strip_inline_flags(pat_src)
+        try:
+            # flags del JSON + limpiar flags inline del patrón
+            flag_map = {"i": re.I, "m": re.M, "s": re.S, "x": re.X, "a": re.A, "l": re.L, "u": 0}
+            pat_src = r.get("pattern", "") or ""
+            pat_src, inline_flags = _strip_inline_flags(pat_src)
 
-        rflags = FLAGS | inline_flags
-        for ch in (r.get("flags", "") or "").lower():
-            rflags |= flag_map.get(ch, 0)
+            rflags = FLAGS | inline_flags
+            for ch in (r.get("flags", "") or "").lower():
+                rflags |= flag_map.get(ch, 0)
 
-        pat = re.compile(pat_src, rflags)
+            pat = re.compile(pat_src, rflags)
+        except re.error as e:
+            # Error de patrón: reportar limpio y abortar
+            print("Veredicto: NO CUMPLE")
+            rid = r.get("id", "<sin-id>")
+            print(f"- [error] BAD-PATTERN {rid}: {e}")
+            print("  patrón:", pat_src)
+            sys.exit(2)
+
         must = r.get("must_match", False)
         invert = r.get("invert", False)
         fx = r.get("fix", {}) or {}
@@ -186,8 +213,8 @@ def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
                     continue
                 fix = render_fix(r, text, ctx, assist, m)
                 violations.append({
-                    "id": r["id"],
-                    "desc": r["desc"],
+                    "id": r.get("id"),
+                    "desc": r.get("desc"),
                     "severity": r.get("severity", "warn"),
                     "cite": r.get("cite"),
                     "quote": r.get("quote"),
@@ -197,8 +224,8 @@ def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
             m = matches[0] if matches else None
             fix = render_fix(r, text, ctx, assist, m)
             violations.append({
-                "id": r["id"],
-                "desc": r["desc"],
+                "id": r.get("id"),
+                "desc": r.get("desc"),
                 "severity": r.get("severity", "warn"),
                 "cite": r.get("cite"),
                 "quote": r.get("quote"),
@@ -279,4 +306,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

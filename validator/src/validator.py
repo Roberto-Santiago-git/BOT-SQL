@@ -10,14 +10,12 @@ def _strip_inline_flags(pat: str):
         return "", 0
     mapping = {'i': re.I, 'm': re.M, 's': re.S, 'x': re.X, 'a': re.A, 'l': re.L, 'u': 0, 'U': 0, 't': 0}
     acc = 0
-    # scoped: (?imsxalu: ...) -> (?: ...), acumula flags
     def repl_scoped(m):
         nonlocal acc
         for ch in set(m.group(1)):
             acc |= mapping.get(ch.lower(), 0)
         return "(?:"
     pat = re.sub(r"\(\?([imxsaluULT]+):", repl_scoped, pat)
-    # global: (?imsxalu)
     def repl_global(m):
         nonlocal acc
         for ch in set(m.group(1)):
@@ -47,18 +45,14 @@ def guess_inline_name(text: str) -> str:
 
 # ---------------- IO ----------------
 def _read_text(path_or_url: str):
-    # URL
     if isinstance(path_or_url, str) and path_or_url.startswith(("http://", "https://")):
         with urllib.request.urlopen(path_or_url) as r:
             return r.read().decode("utf-8", errors="ignore")
-    # Archivo existente
     p = pathlib.Path(path_or_url or "")
     if p.exists():
         return p.read_text(encoding="utf-8", errors="ignore")
-    # Inline sin fences: si luce a código, tómalo como texto
     if looks_like_code(path_or_url or ""):
         return path_or_url
-    # Stdin con "-"
     if path_or_url == "-":
         data = sys.stdin.read()
         if data:
@@ -214,6 +208,14 @@ def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
             })
     return violations
 
+# -------- match de applies_to que tolera stdin (inline.sql) --------
+def _pat_match(pat: str, name: str) -> bool:
+    if fnmatch.fnmatch(name, pat):
+        return True
+    if ("/" in pat or "\\" in pat) and ("/" not in name and "\\" not in name):
+        return fnmatch.fnmatch("x/" + name, pat)  # permite "**/*.sql" vs "inline.sql"
+    return False
+
 # ---------------- MAIN ----------------
 def main():
     if len(sys.argv) < 3:
@@ -224,37 +226,43 @@ def main():
     policy_path, target = sys.argv[1], sys.argv[2]
     policy, assist = load_policy(policy_path)
 
-    # artefacto: archivo, URL, stdin "-" o inline
     text = _read_text(target)
     if text is None or not text.strip():
         print("Veredicto: NO CUMPLE")
         print("- [error] INPUT-NO-CODE: Proporciona el artefacto en ```...``` o adjunta archivo.")
         sys.exit(2)
 
-    # nombre lógico para applies_to
     if pathlib.Path(target).exists():
         name = os.path.basename(target)
     elif isinstance(target, str) and target.startswith(("http://", "https://")):
         name = os.path.basename(target.split("?")[0])
     else:
-        name = guess_inline_name(text)
+        name = guess_inline_name(text)  # p.ej. inline.sql
 
-    # contexto Oracle
     ctx = parse_oracle_ctx(text, assist.get("extractors", {}))
 
-    # eval por namespaces aplicables (con fallback a rules en raíz)
+    # eval por namespaces aplicables (con tolerancia a stdin y fallback)
     namespaces = policy.get("namespaces")
     if not namespaces:
         namespaces = [{"applies_to": ["*"], "rules": policy.get("rules", [])}]
 
+    matched = False
     all_viol = []
     for ns in namespaces:
-        if not ns.get("rules"):
+        rules = ns.get("rules") or []
+        if not rules:
             continue
         pats = ns.get("applies_to")
-        if pats and not any(fnmatch.fnmatch(name, pat) for pat in pats):
-            continue
+        if pats:
+            if not any(_pat_match(p, name) for p in pats):
+                continue
+            matched = True
+        else:
+            matched = True
         all_viol.extend(eval_rules(text, ns, ctx, assist))
+
+    if not matched and policy.get("rules"):
+        all_viol.extend(eval_rules(text, {"rules": policy["rules"]}, ctx, assist))
 
     prefix = policy.get("output", {}).get("prefix", "Veredicto: ")
     if all_viol:
@@ -276,3 +284,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

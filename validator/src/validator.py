@@ -15,6 +15,21 @@ except Exception:
 
 FLAGS = re.I | re.M | re.S
 
+def _strip_inline_flags(pat: str):
+    """
+    Quita banderas inline (?i)(?m)(?s)(?x) en cualquier posición,
+    acumula los flags y devuelve (pat_limpio, flags).
+    """
+    mapping = {'i': re.I, 'm': re.M, 's': re.S, 'x': re.X}
+    acc = 0
+    def repl(m):
+        nonlocal acc
+        for ch in set(m.group(1).lower()):
+            acc |= mapping.get(ch, 0)
+        return ""  # elimina la secuencia (?imsx)
+    clean = re.sub(r"\(\?([imxs]+)\)", repl, pat or "")
+    return clean, acc
+
 # ---------------- Heurísticas sin flags inline ----------------
 SQL_TOKENS = r"\b(CREATE|ALTER|COMMENT|GRANT|REVOKE|DROP|SELECT|INSERT|UPDATE|DELETE)\b|\bPARTITION\s+BY\b"
 IPC_TOKENS = r"^\s*\[Global\]\b|\$\$PM_|\$\$PW_"
@@ -83,7 +98,7 @@ def binding_from_ctx(rule_id: str, ctx: dict, assist: dict):
     b = {}
     if rule_id == "ORC-SELECT-NO-STAR":
         b["table"] = ctx.get("table", "<TABLE>")
-        b["columns_or_placeholder"] = ", ".join(ctx["columns"]) if ctx.get("columns") else "<col1, col2, ...>"
+        b["columns_or_placeholder"] = ", ".join(ctx["columns"]) if ctx.get("columns"]) else "<col1, col2, ...>"
     elif rule_id == "ORC-PK-EXISTS":
         b["schema"] = ctx.get("schema", "<SCHEMA>")
         b["table"]  = ctx.get("table", "<TABLE>")
@@ -140,13 +155,16 @@ def render_fix(rule: dict, text: str, ctx: dict, assist: dict, first_match: re.M
 def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
     violations = []
     for r in ns.get("rules", []):
-        # respetar flags por-regla desde JSON
+        # respetar flags del JSON y limpiar flags inline dentro del patrón
         flag_map = {"i": re.I, "m": re.M, "s": re.S, "x": re.X}
-        rflags = FLAGS
+        pat_src = r.get("pattern", "") or ""
+        pat_src, inline_flags = _strip_inline_flags(pat_src)
+
+        rflags = FLAGS | inline_flags
         for ch in (r.get("flags", "") or "").lower():
             rflags |= flag_map.get(ch, 0)
 
-        pat = re.compile(r.get("pattern", ""), rflags)
+        pat = re.compile(pat_src, rflags)
         must = r.get("must_match", False)
         invert = r.get("invert", False)
         fx = r.get("fix", {}) or {}

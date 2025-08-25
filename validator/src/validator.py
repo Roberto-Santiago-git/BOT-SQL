@@ -4,7 +4,7 @@ from pathlib import Path
 
 FLAGS = re.I | re.M | re.S
 
-# -------- util: eliminar flags inline (?i)(?s)(?x)... del patrón --------
+# -------- util: eliminar flags inline (?i)(?s)(?x) --------
 def _strip_inline_flags(pat: str):
     if not pat:
         return "", 0
@@ -28,7 +28,7 @@ def _compile_pat(pat: str, base_flags: int = FLAGS):
     src, add = _strip_inline_flags(pat or "")
     return re.compile(src, base_flags | add)
 
-# ---------------- Heurísticas sin flags inline ----------------
+# ---------------- Heurísticas ----------------
 SQL_TOKENS = r"\b(CREATE|ALTER|COMMENT|GRANT|REVOKE|DROP|SELECT|INSERT|UPDATE|DELETE)\b|\bPARTITION\s+BY\b"
 IPC_TOKENS = r"^\s*\[Global\]\b|\$\$PM_|\$\$PW_"
 PS_TOKENS  = r"^\s*(Clear-Host|param\(|Write-Output|Get-ChildItem|Set-Content)\b"
@@ -208,12 +208,12 @@ def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
             })
     return violations
 
-# -------- match de applies_to que tolera stdin (inline.sql) --------
+# -------- match applies_to tolerante a stdin --------
 def _pat_match(pat: str, name: str) -> bool:
     if fnmatch.fnmatch(name, pat):
         return True
     if ("/" in pat or "\\" in pat) and ("/" not in name and "\\" not in name):
-        return fnmatch.fnmatch("x/" + name, pat)  # permite "**/*.sql" vs "inline.sql"
+        return fnmatch.fnmatch("x/" + name, pat)  # "**/*.sql" vs "inline.sql"
     return False
 
 # ---------------- MAIN ----------------
@@ -241,28 +241,26 @@ def main():
 
     ctx = parse_oracle_ctx(text, assist.get("extractors", {}))
 
-    # eval por namespaces aplicables (con tolerancia a stdin y fallback)
+    # Namespaces: si ninguno matchea, ejecuta TODOS
     namespaces = policy.get("namespaces")
     if not namespaces:
         namespaces = [{"applies_to": ["*"], "rules": policy.get("rules", [])}]
 
-    matched = False
-    all_viol = []
+    selected = []
     for ns in namespaces:
         rules = ns.get("rules") or []
         if not rules:
             continue
         pats = ns.get("applies_to")
-        if pats:
-            if not any(_pat_match(p, name) for p in pats):
-                continue
-            matched = True
-        else:
-            matched = True
-        all_viol.extend(eval_rules(text, ns, ctx, assist))
+        if not pats or any(_pat_match(p, name) for p in pats):
+            selected.append(ns)
 
-    if not matched and policy.get("rules"):
-        all_viol.extend(eval_rules(text, {"rules": policy["rules"]}, ctx, assist))
+    if not selected:
+        selected = namespaces  # fallback duro: corre todos
+
+    all_viol = []
+    for ns in selected:
+        all_viol.extend(eval_rules(text, ns, ctx, assist))
 
     prefix = policy.get("output", {}).get("prefix", "Veredicto: ")
     if all_viol:
@@ -284,4 +282,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

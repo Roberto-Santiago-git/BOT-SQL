@@ -2,43 +2,46 @@
 import sys, json, re, pathlib, urllib.request, os, fnmatch
 from pathlib import Path
 
-# --- localizar extractor.py y usar read_input si existe ---
-HERE = Path(__file__).resolve().parent.parent  # .../validator
-sys.path.insert(0, str(HERE))
+# ---- localizar extractor.read_input si existe (soporta layouts distintos) ----
+THIS = Path(__file__).resolve()
+BASES = [THIS.parent, THIS.parent.parent]  # p.ej. ...\validator\src y ...\validator
+for b in BASES:
+    if str(b) not in sys.path:
+        sys.path.insert(0, str(b))
 try:
-    from extractor import read_input
+    from extractor import read_input  # validator/extractor.py
 except Exception:
-    read_input = None  # fallback a _read_text
+    read_input = None  # fallback a _read_text si no está
 
 FLAGS = re.I | re.M | re.S
 
-# ---------------- Heurísticas sin fences ----------------
-SQL_TOKENS = r"(?is)\b(CREATE|ALTER|COMMENT|GRANT|REVOKE|DROP|SELECT|INSERT|UPDATE|DELETE)\b|(?is)\bPARTITION\s+BY\b"
-IPC_TOKENS = r"(?im)^\s*\[Global\]\b|(?s)\$\$PM_|(?s)\$\$PW_"
-PS_TOKENS  = r"(?im)^\s*(Clear-Host|param\(|Write-Output|Get-ChildItem|Set-Content)\b"
-XML_TOKENS = r"(?is)<\?xml|<partition\s+name="
+# ---------------- Heurísticas sin flags inline ----------------
+SQL_TOKENS = r"\b(CREATE|ALTER|COMMENT|GRANT|REVOKE|DROP|SELECT|INSERT|UPDATE|DELETE)\b|\bPARTITION\s+BY\b"
+IPC_TOKENS = r"^\s*\[Global\]\b|\$\$PM_|\$\$PW_"
+PS_TOKENS  = r"^\s*(Clear-Host|param\(|Write-Output|Get-ChildItem|Set-Content)\b"
+XML_TOKENS = r"<\?xml|<partition\s+name="
 
 def looks_like_code(text: str) -> bool:
-    return any(re.search(p, text or "") for p in (SQL_TOKENS, IPC_TOKENS, PS_TOKENS, XML_TOKENS))
+    return any(re.search(p, text or "", FLAGS) for p in (SQL_TOKENS, IPC_TOKENS, PS_TOKENS, XML_TOKENS))
 
 def guess_inline_name(text: str) -> str:
-    if re.search(XML_TOKENS, text or ""): return "inline.xml"
-    if re.search(PS_TOKENS,  text or ""): return "inline.ps1"
-    if re.search(IPC_TOKENS, text or ""): return "inline.prm"
+    if re.search(XML_TOKENS, text or "", FLAGS): return "inline.xml"
+    if re.search(PS_TOKENS,  text or "", FLAGS): return "inline.ps1"
+    if re.search(IPC_TOKENS, text or "", FLAGS): return "inline.prm"
     return "inline.sql"
 
 # ---------------- IO ----------------
 def _read_text(path_or_url: str):
     # URL
-    if path_or_url.startswith(("http://", "https://")):
+    if isinstance(path_or_url, str) and path_or_url.startswith(("http://", "https://")):
         with urllib.request.urlopen(path_or_url) as r:
-            return r.read().decode("utf-8")
+            return r.read().decode("utf-8", errors="ignore")
     # Archivo existente
-    p = pathlib.Path(path_or_url)
+    p = pathlib.Path(path_or_url or "")
     if p.exists():
         return p.read_text(encoding="utf-8", errors="ignore")
     # Inline sin fences
-    if looks_like_code(path_or_url):
+    if looks_like_code(path_or_url or ""):
         return path_or_url
     # Stdin con "-"
     if path_or_url == "-":
@@ -112,7 +115,6 @@ def render_fix(rule: dict, text: str, ctx: dict, assist: dict, first_match: re.M
 
     bind = binding_from_ctx(rule["id"], ctx, assist)
 
-    # particiones: usa token incumplido como sufijo
     if rule["id"] in ("ORC-PART-NAME", "XML-PART-NAME") and first_match:
         offending = first_match.group(1)
         if offending and re.fullmatch(r"[A-Za-z0-9_]{1,30}", offending):
@@ -138,7 +140,13 @@ def render_fix(rule: dict, text: str, ctx: dict, assist: dict, first_match: re.M
 def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
     violations = []
     for r in ns.get("rules", []):
-        pat = re.compile(r.get("pattern", ""), FLAGS)
+        # respetar flags por-regla desde JSON
+        flag_map = {"i": re.I, "m": re.M, "s": re.S, "x": re.X}
+        rflags = FLAGS
+        for ch in (r.get("flags", "") or "").lower():
+            rflags |= flag_map.get(ch, 0)
+
+        pat = re.compile(r.get("pattern", ""), rflags)
         must = r.get("must_match", False)
         invert = r.get("invert", False)
         fx = r.get("fix", {}) or {}
@@ -203,7 +211,7 @@ def main():
             except Exception:
                 pass
         try:
-            msg_text = target if looks_like_code(target) else None
+            msg_text = target if looks_like_code(target or "") else None
             cli_file = target if os.path.exists(target) else None
             text = read_input(message_text=msg_text, attachments=attachments, cli_file=cli_file)
         except Exception:
@@ -217,7 +225,7 @@ def main():
     # nombre lógico para applies_to
     if pathlib.Path(target).exists():
         name = os.path.basename(target)
-    elif target.startswith(("http://", "https://")):
+    elif isinstance(target, str) and target.startswith(("http://", "https://")):
         name = os.path.basename(target.split("?")[0])
     else:
         name = guess_inline_name(text)
@@ -244,7 +252,7 @@ def main():
                 print(f"  Fuente: {v['cite']}")
             if v.get("fix"):
                 print("  Recomendación (sentencia corregida):")
-                print("  " + v["fix"].replace("\n", "\n  "))
+                print("  " + (v["fix"] or "").replace("\n", "\n  "))
         sys.exit(2)
     else:
         print(prefix + "CUMPLE")

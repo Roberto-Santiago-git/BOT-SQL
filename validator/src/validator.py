@@ -1,10 +1,11 @@
-# validator.py  (modo 1-archivo)
-import sys, json, re, pathlib, urllib.request, os, fnmatch
+# validator.py  (evalúa todos los namespaces)
+import sys, json, re, pathlib, urllib.request, os
 from pathlib import Path
+import fnmatch
 
 FLAGS = re.I | re.M | re.S
 
-# -------- util: eliminar flags inline (?i)(?s)(?x) --------
+# -------- util: limpiar flags inline (?i)(?s)(?x) --------
 def _strip_inline_flags(pat: str):
     if not pat:
         return "", 0
@@ -208,14 +209,6 @@ def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
             })
     return violations
 
-# -------- match applies_to tolerante a stdin --------
-def _pat_match(pat: str, name: str) -> bool:
-    if fnmatch.fnmatch(name, pat):
-        return True
-    if ("/" in pat or "\\" in pat) and ("/" not in name and "\\" not in name):
-        return fnmatch.fnmatch("x/" + name, pat)  # "**/*.sql" vs "inline.sql"
-    return False
-
 # ---------------- MAIN ----------------
 def main():
     if len(sys.argv) < 3:
@@ -241,23 +234,12 @@ def main():
 
     ctx = parse_oracle_ctx(text, assist.get("extractors", {}))
 
-    # Namespaces: si ninguno matchea, ejecuta TODOS
+    # Evalúa TODOS los namespaces; si no hay, usa reglas de raíz
     namespaces = policy.get("namespaces")
     if not namespaces:
         namespaces = [{"applies_to": ["*"], "rules": policy.get("rules", [])}]
 
-    selected = []
-    for ns in namespaces:
-        rules = ns.get("rules") or []
-        if not rules:
-            continue
-        pats = ns.get("applies_to")
-        if not pats or any(_pat_match(p, name) for p in pats):
-            selected.append(ns)
-
-    if not selected:
-        selected = namespaces  # fallback duro: corre todos
-
+    selected = [ns for ns in namespaces if ns.get("rules")]
     all_viol = []
     for ns in selected:
         all_viol.extend(eval_rules(text, ns, ctx, assist))
@@ -282,3 +264,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -240,8 +240,6 @@
       "severity": "BLOCKER",
       "message": "COMPRESS/NOLOGGING/TABLESPACE solo dentro de CREATE/ALTER."
     },
-
-    /* ===== COMPRESS n correcto por número de columnas (n = cols - 1) ===== */
     {
       "id": "REQUIRE_COMPRESS_FOR_MULTI_COL_INDEX",
       "description": "Índice multicolumna requiere COMPRESS n (n=cols−1).",
@@ -301,8 +299,6 @@
       "message": "Índice de 5 columnas debe declarar COMPRESS 4.",
       "autofix": { "type": "replace", "search": "\\bCOMPRESS\\s+\\d+\\b", "replace": "COMPRESS 4" }
     },
-
-    /* ===== Transacciones / COMMIT / GRANT ===== */
     {
       "id": "ORC-REQUIRE-COMMIT-AFTER-DML",
       "description": "Solo exigir COMMIT cuando hay transacción explícita con DML.",
@@ -335,6 +331,16 @@
       "severity": "MAJOR",
       "message": "En Oracle usa SET TRANSACTION/SAVEPOINT; evita 'BEGIN TRANSACTION'."
     }
-  ]
+  ],
+  "input_extraction": {
+    "order": ["code_fence", "attachment", "raw_url"],
+    "code_fence": { "patterns": ["```sql", "```plsql", "```", "BEGIN", "CREATE OR REPLACE"] },
+    "attachment": { "max_bytes": 10485760, "detect_encoding": ["utf-8", "latin1", "cp1252"] },
+    "raw_url": { "require_content_type": ["text/plain", "text/x-sql", "application/sql"], "timeout_ms": 5000 }
+  },
+  "verdict_format": {
+    "header": "Veredicto: ${CUMPLE|NO CUMPLE}",
+    "sections": ["Resumen", "Hallazgos", "Cómo corregir", "Snippet sugerido"]
+  }
 }
 

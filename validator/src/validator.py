@@ -159,7 +159,6 @@ def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
     violations = []
     for r in ns.get("rules", []):
         try:
-            # flags del JSON + limpiar flags inline del patrón
             flag_map = {"i": re.I, "m": re.M, "s": re.S, "x": re.X, "a": re.A, "l": re.L, "u": 0}
             pat_src = r.get("pattern", "") or ""
             pat_src, inline_flags = _strip_inline_flags(pat_src)
@@ -243,9 +242,15 @@ def main():
     # contexto Oracle
     ctx = parse_oracle_ctx(text, assist.get("extractors", {}))
 
-    # eval por namespaces aplicables
+    # eval por namespaces aplicables (con fallback a rules en raíz)
+    namespaces = policy.get("namespaces")
+    if not namespaces:
+        namespaces = [{"applies_to": ["*"], "rules": policy.get("rules", [])}]
+
     all_viol = []
-    for ns in policy.get("namespaces", []):
+    for ns in namespaces:
+        if not ns.get("rules"):
+            continue
         pats = ns.get("applies_to")
         if pats and not any(fnmatch.fnmatch(name, pat) for pat in pats):
             continue

@@ -1,5 +1,14 @@
 # validator/src/validator.py
 import sys, json, re, pathlib, urllib.request, os, fnmatch
+from pathlib import Path
+
+# --- localizar extractor.py y usar read_input si existe ---
+HERE = Path(__file__).resolve().parent.parent  # .../validator
+sys.path.insert(0, str(HERE))
+try:
+    from extractor import read_input
+except Exception:
+    read_input = None  # fallback a _read_text
 
 FLAGS = re.I | re.M | re.S
 
@@ -178,16 +187,32 @@ def main():
         print("- [error] INPUT-NO-CODE: Proporciona el artefacto en ```...``` o adjunta archivo.")
         sys.exit(1)
 
-    policy_path, target = sys.argv[1], sys.argv[2]
+    policy_path, target, *extra = sys.argv[1], sys.argv[2], sys.argv[3:]
+    policy, assist = load_policy(policy_path)
 
-    # artefacto: archivo, URL raw, stdin "-" o texto sin fences
+    # 1) Lectura clásica
     text = _read_text(target)
-    if text is None:
+
+    # 2) Ingesta robusta con extractor (archivos extra como adjuntos)
+    if (text is None or not text.strip()) and read_input is not None:
+        attachments = [{"filename": os.path.basename(p), "path": p} for p in extra if os.path.exists(p)]
+        env_attach = os.environ.get("VALIDATOR_ATTACH")
+        if env_attach:
+            try:
+                attachments.extend(json.loads(env_attach))
+            except Exception:
+                pass
+        try:
+            msg_text = target if looks_like_code(target) else None
+            cli_file = target if os.path.exists(target) else None
+            text = read_input(message_text=msg_text, attachments=attachments, cli_file=cli_file)
+        except Exception:
+            text = None
+
+    if text is None or not text.strip():
         print("Veredicto: NO CUMPLE")
         print("- [error] INPUT-NO-CODE: Proporciona el artefacto en ```...``` o adjunta archivo.")
         sys.exit(2)
-
-    policy, assist = load_policy(policy_path)
 
     # nombre lógico para applies_to
     if pathlib.Path(target).exists():
@@ -228,3 +253,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

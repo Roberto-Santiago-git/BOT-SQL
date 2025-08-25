@@ -1,47 +1,28 @@
-# validator/src/validator.py
+# validator.py  (modo 1-archivo)
 import sys, json, re, pathlib, urllib.request, os, fnmatch
 from pathlib import Path
 
-# ---- localizar extractor.read_input si existe ----
-THIS = Path(__file__).resolve()
-BASES = [THIS.parent, THIS.parent.parent]
-for b in BASES:
-    p = str(b)
-    if p not in sys.path:
-        sys.path.insert(0, p)
-try:
-    from extractor import read_input  # validator/extractor.py
-except Exception:
-    read_input = None  # fallback
-
 FLAGS = re.I | re.M | re.S
 
+# -------- util: eliminar flags inline (?i)(?s)(?x)... del patrón --------
 def _strip_inline_flags(pat: str):
-    """
-    Convierte flags inline (?i)(?m)(?s)(?x)(?a)(?l)(?u) y con scope (?i:...) a flags de compile().
-    Devuelve (pat_limpio, flags_bits).
-    """
     if not pat:
         return "", 0
     mapping = {'i': re.I, 'm': re.M, 's': re.S, 'x': re.X, 'a': re.A, 'l': re.L, 'u': 0, 'U': 0, 't': 0}
     acc = 0
-
-    # scoped flags: (?imsxalu:  -> (?:   (acumula flags)
+    # scoped: (?imsxalu: ...) -> (?: ...), acumula flags
     def repl_scoped(m):
         nonlocal acc
         for ch in set(m.group(1)):
             acc |= mapping.get(ch.lower(), 0)
         return "(?:"
-
     pat = re.sub(r"\(\?([imxsaluULT]+):", repl_scoped, pat)
-
-    # global flags en cualquier lugar: (?imsxalu)
+    # global: (?imsxalu)
     def repl_global(m):
         nonlocal acc
         for ch in set(m.group(1)):
             acc |= mapping.get(ch.lower(), 0)
         return ""
-
     pat = re.sub(r"\(\?([imxsaluULT]+)\)", repl_global, pat)
     return pat, acc
 
@@ -74,7 +55,7 @@ def _read_text(path_or_url: str):
     p = pathlib.Path(path_or_url or "")
     if p.exists():
         return p.read_text(encoding="utf-8", errors="ignore")
-    # Inline sin fences
+    # Inline sin fences: si luce a código, tómalo como texto
     if looks_like_code(path_or_url or ""):
         return path_or_url
     # Stdin con "-"
@@ -88,7 +69,7 @@ def load_policy(path_or_url):
     data = json.loads(_read_text(path_or_url))
     return data, data.get("assist", {})
 
-# ---------------- Contexto ORACLE (usa _compile_pat para evitar errores) ----------------
+# ---------------- Contexto ORACLE ----------------
 def parse_oracle_ctx(text: str, extractors: dict):
     ctx = {"schema": "<SCHEMA>", "table": "<TABLE>", "columns": []}
     oracle_ext = (extractors or {}).get("oracle", {}) if extractors else {}
@@ -96,8 +77,7 @@ def parse_oracle_ctx(text: str, extractors: dict):
     ct_pat = oracle_ext.get("create_table", "")
     if ct_pat:
         try:
-            ct_re = _compile_pat(ct_pat)
-            ct = ct_re.search(text or "")
+            ct = _compile_pat(ct_pat).search(text or "")
         except re.error:
             ct = None
         if ct:
@@ -107,8 +87,7 @@ def parse_oracle_ctx(text: str, extractors: dict):
             col_pat = oracle_ext.get("column_def", "")
             if col_pat:
                 try:
-                    col_re = _compile_pat(col_pat)
-                    cols = col_re.findall(cols_block or "")
+                    cols = _compile_pat(col_pat).findall(cols_block or "")
                 except re.error:
                     cols = []
                 ctx["columns"] = [c[0] if isinstance(c, tuple) else c for c in cols]
@@ -116,8 +95,7 @@ def parse_oracle_ctx(text: str, extractors: dict):
     pk_pat = oracle_ext.get("partition_key", "")
     if pk_pat:
         try:
-            pk_re = _compile_pat(pk_pat)
-            pk = pk_re.search(text or "")
+            pk = _compile_pat(pk_pat).search(text or "")
         except re.error:
             pk = None
         if pk:
@@ -158,17 +136,12 @@ def render_fix(rule: dict, text: str, ctx: dict, assist: dict, first_match: re.M
     fx = rule.get("fix") or {}
     if not fx:
         return None
-
-    bind = binding_from_ctx(rule["id"], ctx, assist)
-
-    if rule["id"] in ("ORC-PART-NAME", "XML-PART-NAME") and first_match:
+    bind = binding_from_ctx(rule.get("id",""), ctx, assist)
+    if rule.get("id") in ("ORC-PART-NAME", "XML-PART-NAME") and first_match:
         offending = first_match.group(1)
         if offending and re.fullmatch(r"[A-Za-z0-9_]{1,30}", offending):
             bind["suffix"] = offending
-
-    tpl = fx.get("template", "")
-    tpl = _sub_template_vars(tpl, bind)
-
+    tpl = _sub_template_vars(fx.get("template", ""), bind)
     loc = fx.get("locator")
     if loc:
         m = _compile_pat(loc).search(text or "")
@@ -179,7 +152,6 @@ def render_fix(rule: dict, text: str, ctx: dict, assist: dict, first_match: re.M
                 tpl = tpl.replace("${g" + str(i) + "}", gi if gi is not None else "")
             if last >= 1 and m.group(1) is not None:
                 tpl = tpl.replace("${block}", m.group(1))
-
     return tpl.strip() if tpl else None
 
 # ---------------- Evaluación de reglas ----------------
@@ -191,11 +163,9 @@ def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
             flag_map = {"i": re.I, "m": re.M, "s": re.S, "x": re.X, "a": re.A, "l": re.L, "u": 0}
             pat_src = r.get("pattern", "") or ""
             pat_src, inline_flags = _strip_inline_flags(pat_src)
-
             rflags = FLAGS | inline_flags
             for ch in (r.get("flags", "") or "").lower():
                 rflags |= flag_map.get(ch, 0)
-
             pat = re.compile(pat_src, rflags)
         except re.error as e:
             print("Veredicto: NO CUMPLE")
@@ -252,28 +222,11 @@ def main():
         print("- [error] INPUT-NO-CODE: Proporciona el artefacto en ```...``` o adjunta archivo.")
         sys.exit(1)
 
-    policy_path, target, *extra = sys.argv[1], sys.argv[2], sys.argv[3:]
+    policy_path, target = sys.argv[1], sys.argv[2]
     policy, assist = load_policy(policy_path)
 
-    # 1) Lectura clásica
+    # artefacto: archivo, URL, stdin "-" o inline
     text = _read_text(target)
-
-    # 2) Ingesta robusta con extractor (archivos extra como adjuntos)
-    if (text is None or not text.strip()) and read_input is not None:
-        attachments = [{"filename": os.path.basename(p), "path": p} for p in extra if os.path.exists(p)]
-        env_attach = os.environ.get("VALIDATOR_ATTACH")
-        if env_attach:
-            try:
-                attachments.extend(json.loads(env_attach))
-            except Exception:
-                pass
-        try:
-            msg_text = target if looks_like_code(target or "") else None
-            cli_file = target if os.path.exists(target) else None
-            text = read_input(message_text=msg_text, attachments=attachments, cli_file=cli_file)
-        except Exception:
-            text = None
-
     if text is None or not text.strip():
         print("Veredicto: NO CUMPLE")
         print("- [error] INPUT-NO-CODE: Proporciona el artefacto en ```...``` o adjunta archivo.")

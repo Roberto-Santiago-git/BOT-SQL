@@ -106,12 +106,12 @@
         },
         {
           "id": "BAN_SELECT_STAR",
-          "description": "Prohíbe SELECT *.",
-          "type": "regex_forbidden",
-          "pattern": "\\bSELECT\\s*\\*(?=\\s|/|;)",
-          "flags": "i",
-          "severity": "MAJOR",
-          "message": "No uses SELECT *. Lista columnas explícitas."
+  "description": "Prohíbe SELECT *.",
+  "type": "regex_forbidden",
+  "pattern": "\\bSELECT\\s*(?:/\\*.*?\\*/\\s*)*\\*(?=\\s|/|;|$)",
+  "flags": "is",
+  "severity": "BLOCKER",
+  "message": "No uses SELECT *. Lista columnas explícitas."
         },
         {
           "id": "BAN_PARALLEL_HINTS",

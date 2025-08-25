@@ -18,18 +18,15 @@ FLAGS = re.I | re.M | re.S
 
 def _strip_inline_flags(pat: str):
     """
-    Convierte flags inline globales y de alcance (?i)(?m)(?s)(?x)(?a)(?l)(?u)
-    y (?i: ...), etc., a flags de compile(). Devuelve (pat_limpio, flags).
+    Convierte flags inline (?i)(?m)(?s)(?x)(?a)(?l)(?u) y con scope (?i:...) a flags de compile().
+    Devuelve (pat_limpio, flags_bits).
     """
     if not pat:
         return "", 0
-    mapping = {
-        'i': re.I, 'm': re.M, 's': re.S, 'x': re.X,
-        'a': re.A, 'l': re.L, 'u': 0, 'U': 0, 't': 0  # u/U/t: ignorar en Py3
-    }
+    mapping = {'i': re.I, 'm': re.M, 's': re.S, 'x': re.X, 'a': re.A, 'l': re.L, 'u': 0, 'U': 0, 't': 0}
     acc = 0
 
-    # scoped flags: (?imsxalu: ... )  -> (?: ... )
+    # scoped flags: (?imsxalu:  -> (?:   (acumula flags)
     def repl_scoped(m):
         nonlocal acc
         for ch in set(m.group(1)):
@@ -38,7 +35,7 @@ def _strip_inline_flags(pat: str):
 
     pat = re.sub(r"\(\?([imxsaluULT]+):", repl_scoped, pat)
 
-    # global flags en cualquier posición: (?imsxalu)
+    # global flags en cualquier lugar: (?imsxalu)
     def repl_global(m):
         nonlocal acc
         for ch in set(m.group(1)):
@@ -47,6 +44,10 @@ def _strip_inline_flags(pat: str):
 
     pat = re.sub(r"\(\?([imxsaluULT]+)\)", repl_global, pat)
     return pat, acc
+
+def _compile_pat(pat: str, base_flags: int = FLAGS):
+    src, add = _strip_inline_flags(pat or "")
+    return re.compile(src, base_flags | add)
 
 # ---------------- Heurísticas sin flags inline ----------------
 SQL_TOKENS = r"\b(CREATE|ALTER|COMMENT|GRANT|REVOKE|DROP|SELECT|INSERT|UPDATE|DELETE)\b|\bPARTITION\s+BY\b"
@@ -87,26 +88,38 @@ def load_policy(path_or_url):
     data = json.loads(_read_text(path_or_url))
     return data, data.get("assist", {})
 
-# ---------------- Contexto ORACLE (no inventar) ----------------
+# ---------------- Contexto ORACLE (usa _compile_pat para evitar errores) ----------------
 def parse_oracle_ctx(text: str, extractors: dict):
     ctx = {"schema": "<SCHEMA>", "table": "<TABLE>", "columns": []}
     oracle_ext = (extractors or {}).get("oracle", {}) if extractors else {}
 
     ct_pat = oracle_ext.get("create_table", "")
     if ct_pat:
-        ct = re.search(ct_pat, text or "", FLAGS)
+        try:
+            ct_re = _compile_pat(ct_pat)
+            ct = ct_re.search(text or "")
+        except re.error:
+            ct = None
         if ct:
             schema, table, cols_block = ct.group(1), ct.group(2), ct.group(3)
             if schema: ctx["schema"] = schema
             if table:  ctx["table"]  = table
             col_pat = oracle_ext.get("column_def", "")
             if col_pat:
-                cols = re.findall(col_pat, cols_block or "", FLAGS)
-                ctx["columns"] = [c[0] for c in cols]
+                try:
+                    col_re = _compile_pat(col_pat)
+                    cols = col_re.findall(cols_block or "")
+                except re.error:
+                    cols = []
+                ctx["columns"] = [c[0] if isinstance(c, tuple) else c for c in cols]
 
     pk_pat = oracle_ext.get("partition_key", "")
     if pk_pat:
-        pk = re.search(pk_pat, text or "", FLAGS)
+        try:
+            pk_re = _compile_pat(pk_pat)
+            pk = pk_re.search(text or "")
+        except re.error:
+            pk = None
         if pk:
             ctx["partcol"] = pk.group(1)
     return ctx
@@ -158,7 +171,7 @@ def render_fix(rule: dict, text: str, ctx: dict, assist: dict, first_match: re.M
 
     loc = fx.get("locator")
     if loc:
-        m = re.search(loc, text or "", FLAGS)
+        m = _compile_pat(loc).search(text or "")
         if m:
             last = m.lastindex or 0
             for i in range(1, last + 1):
@@ -185,7 +198,6 @@ def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
 
             pat = re.compile(pat_src, rflags)
         except re.error as e:
-            # Error de patrón: reportar limpio y abortar
             print("Veredicto: NO CUMPLE")
             rid = r.get("id", "<sin-id>")
             print(f"- [error] BAD-PATTERN {rid}: {e}")
@@ -275,7 +287,7 @@ def main():
     else:
         name = guess_inline_name(text)
 
-    # contexto Oracle (sin inventar)
+    # contexto Oracle
     ctx = parse_oracle_ctx(text, assist.get("extractors", {}))
 
     # eval por namespaces aplicables

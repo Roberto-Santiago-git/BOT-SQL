@@ -104,16 +104,15 @@
           "severity": "MAJOR",
           "message": "Califica objetos con esquema (p.ej., CPPGS.TABLA)."
         },
-       {
-  "id": "BAN_SELECT_STAR",
-  "description": "Prohíbe SELECT *.",
-  "type": "regex_forbidden",
-  "pattern": "\\bSELECT\\s*\\*(?=\\s|/|;)",
-  "flags": "i",
-  "severity": "MAJOR",
-  "message": "No uses SELECT *. Lista columnas explícitas."
-}
-,
+        {
+          "id": "BAN_SELECT_STAR",
+          "description": "Prohíbe SELECT *.",
+          "type": "regex_forbidden",
+          "pattern": "\\bSELECT\\s*\\*(?=\\s|/|;)",
+          "flags": "i",
+          "severity": "MAJOR",
+          "message": "No uses SELECT *. Lista columnas explícitas."
+        },
         {
           "id": "BAN_PARALLEL_HINTS",
           "description": "Prohíbe paralelismo forzado.",
@@ -349,4 +348,3 @@
     "sections": ["Resumen", "Hallazgos", "Cómo corregir", "Snippet sugerido"]
   }
 }
-

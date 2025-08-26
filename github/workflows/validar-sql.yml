@@ -1,4 +1,0 @@
-git pull
-git rm github/workflows/validar-sql.yml
-git commit -m "Remove duplicated workflow folder"
-git push

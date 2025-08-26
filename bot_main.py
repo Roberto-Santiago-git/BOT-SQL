@@ -1,16 +1,21 @@
-# bot_main.py
-import argparse, os
-from validator_integration import handle_mensaje
+import os, glob, subprocess
 
-if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--text", help="SQL en texto")
-    ap.add_argument("--file", help="Ruta a archivo .sql")
-    args = ap.parse_args()
+def validate_sql_locally(policy_path="policy_oracle"):
+    # Archivos a validar (igual que en el workflow)
+    files = [f for f in glob.glob("**/*", recursive=True)
+             if f.lower().endswith((".sql", ".pkb", ".pks", ".pls", ".txt"))]
 
-    if args.file:
-        with open(args.file, "rb") as f:
-            data = f.read()
-        print(handle_mensaje(adjunto_bytes=data, adjunto_nombre=os.path.basename(args.file)))
-    else:
-        print(handle_mensaje(usuario_texto=args.text or ""))
+    if not os.path.isfile(policy_path):
+        return "⚠️ Policy no encontrada: {}".format(policy_path)
+
+    if not files:
+        return "✅ No hay archivos .sql/.pkb/.pks/.pls/.txt a validar."
+
+    cmd = ["python", "validator/src/validator.py", policy_path] + files
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        out = (res.stdout or "") + (("\n" + res.stderr) if res.stderr else "")
+        code = "✅ OK" if res.returncode == 0 else "❌ Falló (exit={})".format(res.returncode)
+        return "{}\n\n{}".format(code, out.strip())
+    except Exception as e:
+        return "❌ Error ejecutando validador: {}".format(e)

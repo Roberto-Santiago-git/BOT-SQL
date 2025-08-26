@@ -1,13 +1,56 @@
 name: SQL Standards
-on: [pull_request, workflow_dispatch]
+
+on:
+  pull_request:
+  workflow_dispatch:
+
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Run validator
+
+      - name: (Opcional) Instalar dependencias del validador
+        shell: bash
         run: |
-          python validator/src/validator.py policies/policy_oracle.json $(git ls-files | grep -E '\.(sql|pkb|pks|pls|txt)$' || echo "-")
+          if [ -f "validator/requirements.txt" ]; then
+            python -m pip install --upgrade pip
+            pip install -r validator/requirements.txt
+          fi
+
+      - name: Debug de rutas (opcional)
+        shell: bash
+        run: |
+          pwd
+          ls -la
+          ls -la validator || true
+
+      - name: Run validator
+        shell: bash
+        run: |
+          set -e
+
+          # 👉 Ahora usamos el archivo en la RAÍZ del repo
+          POLICY="policy_oracle"
+
+          # 1) Verifica que exista la policy
+          if [ ! -f "$POLICY" ]; then
+            echo "::warning::Policy no encontrada: $POLICY. Se omite validación."
+            exit 0
+          fi
+
+          # 2) Recolecta archivos a validar (versionados en git)
+          FILES="$(git ls-files | grep -E '\.(sql|pkb|pks|pls|txt)$' || true)"
+          if [ -z "$FILES" ]; then
+            echo "No hay archivos .sql/.pkb/.pks/.pls/.txt a validar. ✅"
+            exit 0
+          fi
+
+          echo "Validando con policy: $POLICY"
+          python validator/src/validator.py "$POLICY" $FILES

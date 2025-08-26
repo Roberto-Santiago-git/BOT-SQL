@@ -1,0 +1,13 @@
+name: SQL Standards
+on: [pull_request, workflow_dispatch]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run validator
+        run: |
+          python validator/src/validator.py policies/policy_oracle.json $(git ls-files | grep -E '\.(sql|pkb|pks|pls|txt)$' || echo "-")

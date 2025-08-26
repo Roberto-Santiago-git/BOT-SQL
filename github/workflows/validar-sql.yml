@@ -1,37 +1,84 @@
-name: validar-sql
+name: SQL Standards
+
 on:
-  push:
-    paths:
-      - "**/*.sql"  - "**/*.pks"  - "**/*.pkb"  - "**/*.prc"  - "**/*.fnc"  - "**/*.txt"
-      - "**/*.ps1"  - "**/*.psm1" - "**/*.prm"  - "**/*.ipc.txt" - "**/*.wf.txt" - "**/*.xml"
   pull_request:
     paths:
-      - "**/*.sql"  - "**/*.pks"  - "**/*.pkb"  - "**/*.prc"  - "**/*.fnc"  - "**/*.txt"
-      - "**/*.ps1"  - "**/*.psm1" - "**/*.prm"  - "**/*.ipc.txt" - "**/*.wf.txt" - "**/*.xml"
+      - '**/*.sql'
+      - '**/*.pkb'
+      - '**/*.pks'
+      - '**/*.pls'
+      - '**/*.txt'
+      - 'policies/**'
+      - 'validator/**'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  run:
+  validate:
     runs-on: ubuntu-latest
     env:
-      POLICY: "https://raw.githubusercontent.com/Roberto-Santiago-git/BOT-SQL/aa3b738/validator/policy_ip.json"
+      POLICY_PATH: policies/policy_oracle.json
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - uses: actions/setup-python@v5
-        with: { python-version: "3.x" }
+        with:
+          python-version: "3.11"
+          cache: pip
 
-      - name: Ejecutar validador
+      - name: Install validator deps (optional)
         run: |
-          git ls-files -z '*.sql' '*.pks' '*.pkb' '*.prc' '*.fnc' '*.txt' '*.ps1' '*.psm1' '*.prm' '*.ipc.txt' '*.wf.txt' '*.xml' > files.z || true
-          : > report.txt
-          while IFS= read -r -d '' f; do
-            echo "=== $f ===" | tee -a report.txt
-            python validator/src/validator.py "$POLICY" "$f" || true
-            echo "" >> report.txt
-          done < files.z
-          if grep -q "Veredicto: NO CUMPLE" report.txt; then exit 1; fi
+          if [ -f validator/requirements.txt ]; then
+            pip install -r validator/requirements.txt
+          fi
 
-      - name: Publicar reporte
-        if: always()
-        uses: actions/upload-artifact@v4
-        with: { name: validator-report, path: report.txt }
+      - name: Check policy file exists
+        run: |
+          if [ ! -f "$POLICY_PATH" ]; then
+            echo "❌ No se encontró la policy en: $POLICY_PATH"
+            echo "Asegura la ruta o renómbrala en el workflow."
+            exit 2
+          fi
+          echo "✅ Policy encontrada: $POLICY_PATH"
+
+      - name: Build changed file list
+        id: files
+        shell: bash
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --prune --depth=1 origin \
+              +refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }} || true
+            FILES=$(git diff --name-only origin/${{ github.base_ref }}... \
+              | grep -E '\.(sql|pkb|pks|pls|txt)$' || true)
+          else
+            FILES=$(git ls-files | grep -E '\.(sql|pkb|pks|pls|txt)$' || true)
+          fi
+
+          # Guarda en un archivo para pasar como argumentos confiables
+          printf '%s\n' "$FILES" > filelist.txt
+
+          if [ ! -s filelist.txt ]; then
+            echo "empty=true" >> $GITHUB_OUTPUT
+            echo "No hay archivos que validar."
+          else
+            echo "empty=false" >> $GITHUB_OUTPUT
+            echo "Files to validate:"
+            cat filelist.txt
+          fi
+
+      - name: Run validator
+        if: steps.files.outputs.empty == 'false'
+        run: |
+          # Convierte la lista a una sola línea de argumentos
+          FILE_ARGS=$(tr '\n' ' ' < filelist.txt)
+          echo "Ejecutando: python validator/src/validator.py $POLICY_PATH $FILE_ARGS"
+          python validator/src/validator.py "$POLICY_PATH" $FILE_ARGS
+
+      - name: Skip - no files
+        if: steps.files.outputs.empty == 'true'
+        run: echo "Nada que validar en este cambio. ✅"

@@ -1,266 +1,204 @@
-# validator.py  (evalúa todos los namespaces)
-import sys, json, re, pathlib, urllib.request, os
-from pathlib import Path
-import fnmatch
+#!/usr/bin/env python3
+# validator.py — reporte de estándares Oracle (solo reporta, sin corregir código)
 
-FLAGS = re.I | re.M | re.S
+import sys, os, re, json, pathlib
+from typing import List, Dict, Any
 
-# -------- util: limpiar flags inline (?i)(?s)(?x) --------
-def _strip_inline_flags(pat: str):
-    if not pat:
-        return "", 0
-    mapping = {'i': re.I, 'm': re.M, 's': re.S, 'x': re.X, 'a': re.A, 'l': re.L, 'u': 0, 'U': 0, 't': 0}
-    acc = 0
-    def repl_scoped(m):
-        nonlocal acc
-        for ch in set(m.group(1)):
-            acc |= mapping.get(ch.lower(), 0)
-        return "(?:"
-    pat = re.sub(r"\(\?([imxsaluULT]+):", repl_scoped, pat)
-    def repl_global(m):
-        nonlocal acc
-        for ch in set(m.group(1)):
-            acc |= mapping.get(ch.lower(), 0)
-        return ""
-    pat = re.sub(r"\(\?([imxsaluULT]+)\)", repl_global, pat)
-    return pat, acc
+# ---------- Utilidades de E/S ----------
+def read_text_utf8_nobom(path: str) -> str:
+    # Tolera BOM si existe
+    with open(path, "r", encoding="utf-8-sig") as f:
+        return f.read()
 
-def _compile_pat(pat: str, base_flags: int = FLAGS):
-    src, add = _strip_inline_flags(pat or "")
-    return re.compile(src, base_flags | add)
+def file_exists(path: str) -> bool:
+    try:
+        return pathlib.Path(path).exists()
+    except Exception:
+        return False
 
-# ---------------- Heurísticas ----------------
-SQL_TOKENS = r"\b(CREATE|ALTER|COMMENT|GRANT|REVOKE|DROP|SELECT|INSERT|UPDATE|DELETE)\b|\bPARTITION\s+BY\b"
-IPC_TOKENS = r"^\s*\[Global\]\b|\$\$PM_|\$\$PW_"
-PS_TOKENS  = r"^\s*(Clear-Host|param\(|Write-Output|Get-ChildItem|Set-Content)\b"
-XML_TOKENS = r"<\?xml|<partition\s+name="
+def line_no(text: str, idx: int) -> int:
+    return text.count("\n", 0, max(0, idx)) + 1
 
-def looks_like_code(text: str) -> bool:
-    return any(re.search(p, text or "", FLAGS) for p in (SQL_TOKENS, IPC_TOKENS, PS_TOKENS, XML_TOKENS))
+# ---------- Carga de policy ----------
+def load_policy(policy_path: str) -> Dict[str, Any]:
+    data = json.loads(read_text_utf8_nobom(policy_path))
+    return data
 
-def guess_inline_name(text: str) -> str:
-    if re.search(XML_TOKENS, text or "", FLAGS): return "inline.xml"
-    if re.search(PS_TOKENS,  text or "", FLAGS): return "inline.ps1"
-    if re.search(IPC_TOKENS, text or "", FLAGS): return "inline.prm"
-    return "inline.sql"
+# ---------- Reglas base ----------
+def check_insert_columns(text: str, require: bool) -> List[Dict[str, Any]]:
+    issues = []
+    if not require:
+        return issues
 
-# ---------------- IO ----------------
-def _read_text(path_or_url: str):
-    if isinstance(path_or_url, str) and path_or_url.startswith(("http://", "https://")):
-        with urllib.request.urlopen(path_or_url) as r:
-            return r.read().decode("utf-8", errors="ignore")
-    p = pathlib.Path(path_or_url or "")
-    if p.exists():
-        return p.read_text(encoding="utf-8", errors="ignore")
-    if looks_like_code(path_or_url or ""):
-        return path_or_url
-    if path_or_url == "-":
-        data = sys.stdin.read()
-        if data:
-            return data
-    return None
-
-def load_policy(path_or_url):
-    data = json.loads(_read_text(path_or_url))
-    return data, data.get("assist", {})
-
-# ---------------- Contexto ORACLE ----------------
-def parse_oracle_ctx(text: str, extractors: dict):
-    ctx = {"schema": "<SCHEMA>", "table": "<TABLE>", "columns": []}
-    oracle_ext = (extractors or {}).get("oracle", {}) if extractors else {}
-
-    ct_pat = oracle_ext.get("create_table", "")
-    if ct_pat:
-        try:
-            ct = _compile_pat(ct_pat).search(text or "")
-        except re.error:
-            ct = None
-        if ct:
-            schema, table, cols_block = ct.group(1), ct.group(2), ct.group(3)
-            if schema: ctx["schema"] = schema
-            if table:  ctx["table"]  = table
-            col_pat = oracle_ext.get("column_def", "")
-            if col_pat:
-                try:
-                    cols = _compile_pat(col_pat).findall(cols_block or "")
-                except re.error:
-                    cols = []
-                ctx["columns"] = [c[0] if isinstance(c, tuple) else c for c in cols]
-
-    pk_pat = oracle_ext.get("partition_key", "")
-    if pk_pat:
-        try:
-            pk = _compile_pat(pk_pat).search(text or "")
-        except re.error:
-            pk = None
-        if pk:
-            ctx["partcol"] = pk.group(1)
-    return ctx
-
-# ---------------- Bindings para fixes ----------------
-def binding_from_ctx(rule_id: str, ctx: dict, assist: dict):
-    b = {}
-    if rule_id == "ORC-SELECT-NO-STAR":
-        b["table"] = ctx.get("table", "<TABLE>")
-        b["columns_or_placeholder"] = ", ".join(ctx["columns"]) if ctx.get("columns") else "<col1, col2, ...>"
-    elif rule_id == "ORC-PK-EXISTS":
-        b["schema"] = ctx.get("schema", "<SCHEMA>")
-        b["table"]  = ctx.get("table", "<TABLE>")
-        b["pk_cols"] = "<PK_COL1, PK_COL2, ...>"
-    elif rule_id == "ORC-TABLE-OPTIONS":
-        tbs = (((assist.get("defaults") or {}).get("oracle") or {}).get("tablespace")) or "<TABLESPACE>"
-        b["tablespace"] = tbs
-    elif rule_id == "ORC-IDX-NAME":
-        b["table"] = ctx.get("table", "<TABLE>")
-        b["firstcol"] = ctx["columns"][0] if ctx.get("columns") else "<COL>"
-    elif rule_id in ("ORC-PART-NAME", "XML-PART-NAME"):
-        b["partcol"] = ctx.get("partcol", "<COL>")
-        b["suffix"]  = "<SUFFIX>"
-    elif rule_id == "ORC-GRANT-FQN":
-        b["schema"]  = ctx.get("schema", "<SCHEMA>")
-    return b
-
-# ---------------- Render de fixes ----------------
-def _sub_template_vars(tpl: str, bind: dict) -> str:
-    out = tpl
-    for k, v in bind.items():
-        out = out.replace("${" + k + "}", v)
-    return out
-
-def render_fix(rule: dict, text: str, ctx: dict, assist: dict, first_match: re.Match | None):
-    fx = rule.get("fix") or {}
-    if not fx:
-        return None
-    bind = binding_from_ctx(rule.get("id",""), ctx, assist)
-    if rule.get("id") in ("ORC-PART-NAME", "XML-PART-NAME") and first_match:
-        offending = first_match.group(1)
-        if offending and re.fullmatch(r"[A-Za-z0-9_]{1,30}", offending):
-            bind["suffix"] = offending
-    tpl = _sub_template_vars(fx.get("template", ""), bind)
-    loc = fx.get("locator")
-    if loc:
-        m = _compile_pat(loc).search(text or "")
-        if m:
-            last = m.lastindex or 0
-            for i in range(1, last + 1):
-                gi = m.group(i)
-                tpl = tpl.replace("${g" + str(i) + "}", gi if gi is not None else "")
-            if last >= 1 and m.group(1) is not None:
-                tpl = tpl.replace("${block}", m.group(1))
-    return tpl.strip() if tpl else None
-
-# ---------------- Evaluación de reglas ----------------
-def eval_rules(text: str, ns: dict, ctx: dict, assist: dict):
-    violations = []
-    for r in ns.get("rules", []):
-        try:
-            flag_map = {"i": re.I, "m": re.M, "s": re.S, "x": re.X, "a": re.A, "l": re.L, "u": 0}
-            pat_src = r.get("pattern", "") or ""
-            pat_src, inline_flags = _strip_inline_flags(pat_src)
-            rflags = FLAGS | inline_flags
-            for ch in (r.get("flags", "") or "").lower():
-                rflags |= flag_map.get(ch, 0)
-            pat = re.compile(pat_src, rflags)
-        except re.error as e:
-            print("Veredicto: NO CUMPLE")
-            rid = r.get("id", "<sin-id>")
-            print(f"- [error] BAD-PATTERN {rid}: {e}")
-            print("  patrón:", pat_src)
-            sys.exit(2)
-
-        must = r.get("must_match", False)
-        invert = r.get("invert", False)
-        fx = r.get("fix", {}) or {}
-        apply_global = (fx.get("apply") == "global") or (fx.get("multiple") is True)
-
-        matches = list(pat.finditer(text or "")) if apply_global else [pat.search(text or "")]
-        has_hit = any(bool(m) for m in matches if m)
-
-        hit = has_hit
-        if invert:
-            hit = not hit
-        violated = (not hit) if must else hit
-        if not violated:
-            continue
-
-        if apply_global and matches:
-            for m in matches:
-                if not m:
-                    continue
-                fix = render_fix(r, text, ctx, assist, m)
-                violations.append({
-                    "id": r.get("id"),
-                    "desc": r.get("desc"),
-                    "severity": r.get("severity", "warn"),
-                    "cite": r.get("cite"),
-                    "quote": r.get("quote"),
-                    "fix": fix
-                })
-        else:
-            m = matches[0] if matches else None
-            fix = render_fix(r, text, ctx, assist, m)
-            violations.append({
-                "id": r.get("id"),
-                "desc": r.get("desc"),
-                "severity": r.get("severity", "warn"),
-                "cite": r.get("cite"),
-                "quote": r.get("quote"),
-                "fix": fix
+    # Encuentra "INSERT INTO <objeto>" y valida que el próximo token no-espacio sea "("
+    ins_iter = re.finditer(r"\binsert\s+into\s+([\"A-Z0-9_.]+)", text, flags=re.I)
+    for m in ins_iter:
+        start = m.end()  # posición después del nombre del objeto
+        j = start
+        # salta espacios y saltos de línea
+        while j < len(text) and text[j] in (" ", "\t", "\r", "\n"):
+            j += 1
+        has_paren = (j < len(text) and text[j] == "(")
+        if not has_paren:
+            # ubicación desde "INSERT" hasta el fin de línea o hasta "VALUES"/"SELECT"
+            ln1 = line_no(text, m.start())
+            ln2 = ln1
+            # intenta extender hasta VALUES/SELECT más cercano
+            tail = text[m.start(): m.start() + 400]
+            mv = re.search(r"\b(values|select)\b", tail, flags=re.I)
+            if mv:
+                ln2 = line_no(text, m.start() + mv.end())
+            issues.append({
+                "code": "INSERT-COLS",
+                "desc": "INSERT debe declarar columnas destino",
+                "ls": ln1, "le": ln2
             })
-    return violations
+    return issues
 
-# ---------------- MAIN ----------------
+def check_exception_prefix(text: str, prefix: str) -> List[Dict[str, Any]]:
+    issues = []
+    if not prefix:
+        return issues
+    for m in re.finditer(r"^\s*([A-Z][A-Z0-9_]*)\s+EXCEPTION\s*;", text, flags=re.M):
+        name = m.group(1)
+        if not name.startswith(prefix):
+            issues.append({
+                "code": "EXC-PREFIX",
+                "desc": f"Excepciones deben iniciar con {prefix}",
+                "ls": line_no(text, m.start()), "le": line_no(text, m.start())
+            })
+    return issues
+
+def check_select_star(text: str, forbid: bool) -> List[Dict[str, Any]]:
+    issues = []
+    if not forbid:
+        return issues
+    for m in re.finditer(r"\bselect\s*\*\s*from\b", text, flags=re.I):
+        ln = line_no(text, m.start())
+        issues.append({
+            "code": "SELECT-STAR",
+            "desc": "Evitar SELECT *; lista columnas explícitas",
+            "ls": ln, "le": ln
+        })
+    return issues
+
+def check_forbidden_keywords(text: str, keywords: List[str]) -> List[Dict[str, Any]]:
+    issues = []
+    for kw in (keywords or []):
+        kw_pat = r"\b" + re.escape(kw.strip()) + r"\b"
+        for m in re.finditer(kw_pat, text, flags=re.I):
+            ln = line_no(text, m.start())
+            issues.append({
+                "code": "KW-FORBIDDEN",
+                "desc": f"Keyword prohibido: {kw.strip()}",
+                "ls": ln, "le": ln
+            })
+    return issues
+
+def check_bitacora(text: str, cfg: Dict[str, str]) -> List[Dict[str, Any]]:
+    issues = []
+    if not cfg:
+        return issues
+    reqs = [
+        ("BITACORA", cfg.get("start", "")),
+        ("BITACORA", cfg.get("finish_ok", "")),
+        ("BITACORA", cfg.get("finish_err", "")),
+    ]
+    for code, needle in reqs:
+        if not needle:
+            continue
+        if re.search(re.escape(needle), text, flags=re.I) is None:
+            issues.append({
+                "code": code,
+                "desc": f"Falta llamada requerida: {needle}",
+                "ls": 1, "le": 1
+            })
+    return issues
+
+# ---------- Reporte ----------
+def emit_report(all_issues: Dict[str, List[Dict[str, Any]]], policy: Dict[str, Any]) -> int:
+    total = sum(len(v) for v in all_issues.values())
+    prefix = (policy.get("output") or {}).get("prefix", "Veredicto: ")
+    if total == 0:
+        print(prefix + "CUMPLE")
+        return 0
+
+    print(f"{prefix}NO CUMPLE [{total} hallazgos]")
+
+    doc_refs = policy.get("doc_refs", {})
+    notes = policy.get("remediation_notes", {})
+
+    for fname, items in all_issues.items():
+        print(f"\n[{fname}]")
+        for it in items:
+            rng = f"L{it['ls']}" + (f"–{it['le']}" if it['le'] != it['ls'] else "")
+            print(f"- Ubicación: {rng}")
+            print(f"  Regla: {it['code']} — {it['desc']}")
+            ref = doc_refs.get(it["code"]) or doc_refs.get(it["code"].split(":")[0], {})
+            if ref:
+                page = ref.get("page")
+                section = ref.get("section")
+                if page or section:
+                    print(f"  Sustento: Estándares Oracle, p.{page} (\"{section}\")")
+            note = notes.get(it["code"]) or notes.get(it["code"].split(":")[0], "")
+            if note:
+                print(f"  Cómo corregir: {note}")
+    return 1
+
+# ---------- MAIN ----------
 def main():
     if len(sys.argv) < 3:
         print("Veredicto: NO CUMPLE")
-        print("- [error] INPUT-NO-CODE: Proporciona el artefacto en ```...``` o adjunta archivo.")
-        sys.exit(1)
+        print("- [error] Uso: validator.py <policy.json> <archivo1.sql> [archivo2.sql ...]")
+        sys.exit(2)
 
-    policy_path, target = sys.argv[1], sys.argv[2]
-    policy, assist = load_policy(policy_path)
+    policy_path = sys.argv[1]
+    targets = sys.argv[2:]
 
-    text = _read_text(target)
-    if text is None or not text.strip():
+    if not file_exists(policy_path):
         print("Veredicto: NO CUMPLE")
-        print("- [error] INPUT-NO-CODE: Proporciona el artefacto en ```...``` o adjunta archivo.")
+        print(f"- [error] Policy no encontrada: {policy_path}")
         sys.exit(2)
 
-    if pathlib.Path(target).exists():
-        name = os.path.basename(target)
-    elif isinstance(target, str) and target.startswith(("http://", "https://")):
-        name = os.path.basename(target.split("?")[0])
-    else:
-        name = guess_inline_name(text)  # p.ej. inline.sql
-
-    ctx = parse_oracle_ctx(text, assist.get("extractors", {}))
-
-    # Evalúa TODOS los namespaces; si no hay, usa reglas de raíz
-    namespaces = policy.get("namespaces")
-    if not namespaces:
-        namespaces = [{"applies_to": ["*"], "rules": policy.get("rules", [])}]
-
-    selected = [ns for ns in namespaces if ns.get("rules")]
-    all_viol = []
-    for ns in selected:
-        all_viol.extend(eval_rules(text, ns, ctx, assist))
-
-    prefix = policy.get("output", {}).get("prefix", "Veredicto: ")
-    if all_viol:
-        print(prefix + "NO CUMPLE")
-        for v in all_viol:
-            print(f"- [{v['severity']}] {v['id']}: {v['desc']}")
-            if v.get("quote"):
-                print(f"  Cita: {v['quote']}")
-            if v.get("cite"):
-                print(f"  Fuente: {v['cite']}")
-            if v.get("fix"):
-                print("  Recomendación (sentencia corregida):")
-                print("  " + (v["fix"] or "").replace("\n", "\n  "))
+    try:
+        policy = load_policy(policy_path)
+    except Exception as e:
+        print("Veredicto: NO CUMPLE")
+        print(f"- [error] Policy inválida: {e}")
         sys.exit(2)
-    else:
-        print(prefix + "CUMPLE")
-        print("Listo. Ahora puedes validar en producción.")
-        sys.exit(0)
+
+    all_issues: Dict[str, List[Dict[str, Any]]] = {}
+
+    for target in targets:
+        if not file_exists(target):
+            print(f"- [warn] archivo no encontrado: {target}")
+            continue
+        try:
+            text = read_text_utf8_nobom(target)
+        except Exception as e:
+            print(f"- [warn] no se pudo leer {target}: {e}")
+            continue
+
+        issues: List[Dict[str, Any]] = []
+
+        # Reglas desde policy
+        issues += check_insert_columns(text, policy.get("require_insert_column_list", False))
+        issues += check_exception_prefix(text, policy.get("require_exception_prefix", ""))
+
+        if policy.get("forbid_select_star", False):
+            issues += check_select_star(text, True)
+
+        fk = policy.get("forbid_keywords") or []
+        if fk:
+            issues += check_forbidden_keywords(text, fk)
+
+        issues += check_bitacora(text, policy.get("require_bitacora_calls", {}))
+
+        if issues:
+            all_issues[os.path.basename(target)] = issues
+
+    exit_code = emit_report(all_issues, policy)
+    sys.exit(exit_code)
 
 if __name__ == "__main__":
     main()

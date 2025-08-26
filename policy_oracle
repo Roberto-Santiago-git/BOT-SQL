@@ -1,43 +1,111 @@
 {
-  "version": 1,
-  "engine": "oracle",
-  "include": ["**/*.sql", "**/*.pks", "**/*.pkb", "**/*.pls", "**/*.txt"],
-  "exclude": [".github/**", "validator/**"],
-  "severity_map": { "deny": "error", "require": "error" },
-  "rules": [
+  "policy_version": "1.0.1",
+  "engine": "oracle-19c",
+  "mode": "static_code_scan",
+  "owner_schemas": ["CPPGS"],
+  "reporting": {
+    "fail_on_severity": ["BLOCKER"],
+    "score_weights": { "BLOCKER": 100, "MAJOR": 20, "MINOR": 5 },
+    "approval_max_score": 20,
+    "verdict_labels": { "pass": "CUMPLE", "fail": "NO CUMPLE" }
+  },
+  "file_match": ["**/*.sql", "**/*.pkb", "**/*.pks", "**/*.pls"],
+  "namespaces": [
     {
-      "id": "no_select_star",
-      "type": "deny",
-      "regex": "(?i)\\bselect\\s*\\*",
-      "flags": "m",
-      "message": "Evita SELECT *; lista columnas explícitas."
-    },
-    {
-      "id": "no_nolock",
-      "type": "deny",
-      "regex": "(?i)with\\s*\\(\\s*nolock\\s*\\)",
-      "message": "NOLOCK es de SQL Server; no aplica en Oracle."
-    },
-    {
-      "id": "no_top",
-      "type": "deny",
-      "regex": "(?i)\\bselect\\s+top\\s+\\d+",
-      "message": "TOP es de SQL Server; usa FETCH FIRST n ROWS ONLY."
-    },
-    {
-      "id": "no_brackets_ident",
-      "type": "deny",
-      "regex": "\\[[^\\]]+\\]",
-      "message": "Identificadores con [ ] son de SQL Server; usa comillas dobles."
-    },
-    {
-      "id": "no_go_batch",
-      "type": "deny",
-      "regex": "(?im)^\\s*go\\s*$",
-      "message": "GO es del cliente de SQL Server; no existe en Oracle."
-    },
-    {
-      "id": "no_getdate",
-      "type": "deny",
-      "regex": "(?i)\\bgetdate\\(\\)|current_timestamp\\(\\)",
-      "message": "Usa SYSDATE o LOCALTIMESTAMP en Oracle."
+      "id": "oracle_sql",
+      "applies_to": ["**/*.sql", "**/*.pkb", "**/*.pks", "**/*.pls"],
+      "rules": [
+        {
+          "id": "REQUIRE_SCHEMA_QUALIFIED_DDL",
+          "description": "DDL calificado con esquema (CPPGS).",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+(?:TABLE|VIEW|SEQUENCE|TRIGGER|INDEX)\\s+(?!CPPGS\\.)[A-Z0-9_]+",
+          "flags": "is",
+          "severity": "MAJOR",
+          "message": "Califica objetos con el esquema CPPGS."
+        },
+        {
+          "id": "TABLE_NAMING_PREFIX",
+          "description": "Tablas: prefijo TBL_/TSTG_ y MAYÚSCULAS.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+TABLE\\s+CPPGS\\.(?!T(?:BL|STG)_)[A-Z0-9_]+",
+          "flags": "is",
+          "severity": "MAJOR",
+          "message": "Usa TBL_ o TSTG_ en nombres de tablas."
+        },
+        {
+          "id": "INDEX_PK_NAMING",
+          "description": "Índices/PK deben iniciar con IDX_ o PK_.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+CPPGS\\.(?!(IDX_|PK_))[A-Z0-9_]+",
+          "flags": "is",
+          "severity": "MAJOR",
+          "message": "Nombre de índice debe iniciar con IDX_ (o PK_ si soporta PK)."
+        },
+        {
+          "id": "SP_NAMING",
+          "description": "Stored Procedure debe iniciar con SP_.",
+          "type": "regex_forbidden",
+          "pattern": "CREATE\\s+OR\\s+REPLACE\\s+PROCEDURE\\s+CPPGS\\.(?!SP_)[A-Z0-9_]+",
+          "flags": "is",
+          "severity": "MINOR",
+          "message": "Usa prefijo SP_ para procedures."
+        },
+        {
+          "id": "PKG_FUNC_NAMING",
+          "description": "Package PKG_ y Function F_.",
+          "type": "regex_forbidden_any",
+          "patterns": [
+            "CREATE\\s+OR\\s+REPLACE\\s+PACKAGE\\s+CPPGS\\.(?!PKG_)[A-Z0-9_]+",
+            "CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+CPPGS\\.(?!F_)[A-Z0-9_]+"
+          ],
+          "flags": "is",
+          "severity": "MINOR",
+          "message": "Package debe iniciar con PKG_ y Function con F_."
+        },
+        {
+          "id": "BAN_SELECT_STAR",
+          "description": "Prohíbe SELECT *.",
+          "type": "regex_forbidden",
+          "pattern": "\\bSELECT\\s*(?:/\\*.*?\\*/\\s*)*\\*(?=\\s|/|;|$)",
+          "flags": "i",
+          "severity": "MAJOR",
+          "message": "No uses SELECT *. Lista columnas explícitas."
+        },
+        {
+          "id": "BAN_ORDER_BY_POSITION",
+          "description": "Prohíbe ORDER BY por número.",
+          "type": "regex_forbidden",
+          "pattern": "\\bORDER\\s+BY\\s+\\d+(\\s*,\\s*\\d+)*\\b",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Ordena por nombres de columna."
+        },
+        {
+          "id": "REQUIRE_COMMENT_ON_TABLE",
+          "description": "Cada tabla nueva debe tener COMMENT ON TABLE.",
+          "type": "requires_when_group",
+          "group": [
+            {
+              "when": "CREATE\\s+TABLE\\s+(CPPGS\\.[A-Z0-9_]+)",
+              "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';"
+            }
+          ],
+          "flags": "is",
+          "severity": "MINOR",
+            "message": "Agrega COMMENT ON TABLE con descripción."
+        },
+        {
+          "id": "REQUIRE_WHERE_DML",
+          "description": "UPDATE/DELETE deben tener WHERE.",
+          "type": "requires_when_any",
+          "when_any": ["\\bUPDATE\\b", "\\bDELETE\\b"],
+          "require": "\\bWHERE\\b",
+          "flags": "is",
+          "severity": "BLOCKER",
+          "message": "Evita DML masivo sin WHERE."
+        }
+      ]
+    }
+  ]
+}

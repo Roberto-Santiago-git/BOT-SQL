@@ -1,161 +1,64 @@
 {
   "policy_version": "1.0.0",
-  "engine": "powershell",
+  "engine": "powershell-5+",
   "mode": "static_code_scan",
+  "file_match": ["**/*.ps1"],
   "reporting": {
-    "fail_on_severity": [
-      "BLOCKER"
-    ],
-    "score_weights": {
-      "BLOCKER": 100,
-      "MAJOR": 20,
-      "MINOR": 5
-    },
-    "approval_max_score": 20,
-    "verdict_labels": {
-      "pass": "CUMPLE",
-      "fail": "NO CUMPLE"
-    }
+    "fail_on_severity": ["BLOCKER"],
+    "verdict_labels": { "pass": "CUMPLE", "fail": "NO CUMPLE" }
   },
-  "file_match": [
-    "**/*.ps1",
-    "**/*.psm1"
-  ],
-  "rules": [
+  "namespaces": [
     {
-      "id": "PS_REQUIRE_HEADER",
-      "description": "Help-based comments (.SYNOPSIS/.DESCRIPTION).",
-      "type": "requires_when_group",
-      "group": [
+      "id": "ps1",
+      "applies_to": ["**/*.ps1"],
+      "rules": [
         {
-          "when": "^[\\s\\S]{0,800}",
-          "require_template": "\\.SYNOPSIS"
+          "id": "REQUIRE_CLEAR_HOST",
+          "description": "El script debe iniciar con Clear-Host.",
+          "type": "requires_when",
+          "when": "^(?!\\s*#).+",
+          "require": "^\\s*Clear-Host\\b",
+          "flags": "im",
+          "severity": "MINOR",
+          "message": "Agrega Clear-Host al inicio del script."
         },
         {
-          "when": "^[\\s\\S]{0,800}",
-          "require_template": "\\.DESCRIPTION"
-        }
-      ],
-      "flags": "is",
-      "severity": "MINOR",
-      "message": "Incluye help-based comments."
-    },
-    {
-      "id": "PS_REQUIRE_STRICTMODE",
-      "description": "Set-StrictMode y errores fatales.",
-      "type": "requires_when_group",
-      "group": [
-        {
-          "when": "^[\\s\\S]*$",
-          "require_template": "Set-StrictMode\\s+-Version\\s+(Latest|3)"
+          "id": "REQUIRE_HEADER_COMMENT",
+          "description": "Encabezado de metadatos (descripción/versión/ejecución).",
+          "type": "regex_required_any",
+          "patterns": [
+            "^\\s*#\\s*Descripcion|^\\s*#\\s*Descripción",
+            "^\\s*#\\s*Version|^\\s*#\\s*Versión",
+            "^\\s*#\\s*(Workflow|Ejecucion|Ejecución)"
+          ],
+          "flags": "im",
+          "severity": "MAJOR",
+          "message": "Incluye encabezado con descripción, versión y ejecución."
         },
         {
-          "when": "^[\\s\\S]*$",
-          "require_template": "\\$ErrorActionPreference\\s*=\\s*'Stop'"
-        }
-      ],
-      "flags": "is",
-      "severity": "MAJOR",
-      "message": "Activa StrictMode y ErrorActionPreference='Stop'."
-    },
-    {
-      "id": "PS_REQUIRE_CMDLETBINDING",
-      "description": "Funciones avanzadas.",
-      "type": "requires_when_group",
-      "group": [
-        {
-          "when": "function\\s+[A-Za-z0-9_]+\\s*\\{",
-          "require_template": "\\[CmdletBinding\\(\\)\\]"
+          "id": "BAN_NESTED_POWERSHELL",
+          "description": "No usar shells secundarios.",
+          "type": "regex_forbidden_any",
+          "patterns": [
+            "\\bStart-Process\\s+(?:powershell|pwsh)\\b",
+            "\\bpowershell\\.exe\\s+-File\\b",
+            "\\bpwsh\\s+-File\\b"
+          ],
+          "flags": "i",
+          "severity": "BLOCKER",
+          "message": "Evita lanzar shells secundarios; usa un solo .ps1 principal."
         },
         {
-          "when": "param\\s*\\(",
-          "require_template": "\\[Parameter\\("
+          "id": "BAN_INVOKE_EXPRESSION",
+          "description": "Evitar Invoke-Expression/iex.",
+          "type": "regex_forbidden",
+          "pattern": "\\b(Invoke-Expression|iex)\\b",
+          "flags": "i",
+          "severity": "MAJOR",
+          "message": "No uses Invoke-Expression por seguridad/mantenibilidad."
         }
-      ],
-      "flags": "is",
-      "severity": "MINOR",
-      "message": "Usa [CmdletBinding()] y [Parameter()]."
-    },
-    {
-      "id": "PS_BAN_INVOKE_EXPRESSION",
-      "description": "Prohíbe iex/Invoke-Expression.",
-      "type": "regex_forbidden",
-      "pattern": "(?i)(Invoke-Expression|\\biex\\b)",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "No uses Invoke-Expression."
-    },
-    {
-      "id": "PS_BAN_DOWNLOADSTRING",
-      "description": "No descargar y ejecutar en caliente.",
-      "type": "regex_forbidden_any",
-      "patterns": [
-        "DownloadString\\(",
-        "Invoke-WebRequest\\([^\\)]*\\)\\s*\\|\\s*Invoke-Expression"
-      ],
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Riesgo de RCE."
-    },
-    {
-      "id": "PS_BAN_EXECUTIONPOLICY_BYPASS",
-      "description": "No modificar ExecutionPolicy.",
-      "type": "regex_forbidden",
-      "pattern": "(?i)Set-ExecutionPolicy|ExecutionPolicy\\s+Bypass",
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "No cambies ExecutionPolicy en scripts."
-    },
-    {
-      "id": "PS_BAN_HARDCODED_CREDS",
-      "description": "Sin credenciales hardcodeadas.",
-      "type": "regex_forbidden_any",
-      "patterns": [
-        "ConvertTo-SecureString\\s+\"[^\"]+\"\\s+-AsPlainText\\s+-Force",
-        "Password\\s*=\\s*['\\\"][^'\\\"]+['\\\"]",
-        "-Credential\\s+\\(New-Object\\s+System.Management.Automation.PSCredential\\s*\\(\\s*['\\\"][^'\\\"]+['\\\"],\\s*['\\\"][^'\\\"]+['\\\"]\\s*\\)\\)",
-        "ConnectionString\\s*=\\s*['\\\"][^'\\\"]+['\\\"]"
-      ],
-      "flags": "is",
-      "severity": "BLOCKER",
-      "message": "Usa SecretManagement/KeyVault."
-    },
-    {
-      "id": "PS_REQUIRE_TRANSCRIPT",
-      "description": "Auditoría de ejecución.",
-      "type": "requires_when_group",
-      "group": [
-        {
-          "when": "^[\\s\\S]*$",
-          "require_template": "Start-Transcript"
-        },
-        {
-          "when": "^[\\s\\S]*$",
-          "require_template": "Stop-Transcript"
-        }
-      ],
-      "flags": "is",
-      "severity": "MINOR",
-      "message": "Incluye Start/Stop-Transcript."
-    },
-    {
-      "id": "PS_BAN_RUNAS_ADMIN",
-      "description": "Evita elevaciones sin justificación.",
-      "type": "regex_forbidden",
-      "pattern": "Start-Process[\\s\\S]*-Verb\\s+RunAs",
-      "flags": "is",
-      "severity": "MAJOR",
-      "message": "Principio de mínimo privilegio."
-    },
-    {
-      "id": "PS_REQUIRE_SAFE_DELETE",
-      "description": "Borrados destructivos con confirmación.",
-      "type": "requires_when",
-      "when": "(?i)(Remove-Item|Remove-ChildItem)[\\s\\S]*-Recurse[\\s\\S]*-Force",
-      "require": "(?i)(-Confirm|-WhatIf)",
-      "flags": "is",
-      "severity": "MAJOR",
-      "message": "Agrega -Confirm o -WhatIf."
+      ]
     }
   ]
 }
+

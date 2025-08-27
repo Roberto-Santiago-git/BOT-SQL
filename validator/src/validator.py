@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # validator.py — reporte de estándares Oracle (solo reporta, NO corrige)
+# Ajustes: intent routing + STDIN + plantillas SIN-ANÁLISIS.
 
 import sys, os, re, json, pathlib
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple, Optional
 
 # ---------- Utilidades ----------
 
@@ -19,6 +20,92 @@ def file_exists(path: str) -> bool:
 def line_no(text: str, idx: int) -> int:
     return text.count("\n", 0, max(0, idx)) + 1
 
+def read_stdin_text() -> str:
+    try:
+        if sys.stdin and not sys.stdin.isatty():
+            return sys.stdin.read()
+    except Exception:
+        pass
+    return ""
+
+# ---------- Plantillas / Routing por intención ----------
+
+TEMPLATE_HELP = """Veredicto: SIN-ANÁLISIS
+Soy Validator CyGD. Valido SQL/PLSQL Oracle, SQL Server, PostgreSQL, PowerShell, XML e IPC.
+Cómo usar:
+1) Ejecuta: validator.py <policy.json> <archivo1.sql> [archivo2.sql ...]
+2) O bien pasa el código por STDIN:  echo \"```sql\\nCREATE TABLE T(...);\\n```\" | validator.py <policy.json>
+3) Opcional: agrega engine/versión/tablespace/esquema destino en tu policy.
+
+Comandos típicos del bot (si no adjuntas código):
+/help   /policy   /rules   /fix
+
+Ejemplo de entrada válida:
+```sql
+CREATE INDEX X ON T(A) TABLESPACE TBS_DESP_01_IDX;
+```"""
+
+TEMPLATE_WHOAMI = """Veredicto: SIN-ANÁLISIS
+Soy Validator CyGD. Escaneo estático, aplico tus policies y regreso veredicto, razones y parches sugeridos."""
+
+TEMPLATE_NO_CODE = """Veredicto: SIN-ANÁLISIS
+No detecté código ni archivo. Sube .sql/.pkb/.ps1/.xml o pega entre ```.
+Ejemplo:
+```sql
+CREATE TABLE T(...);
+```"""
+
+TEMPLATE_POLICY_QUERY = """Veredicto: SIN-ANÁLISIS
+Puedo listar reglas y severidades o generar un JSON base para actualizar la policy. Indica la regla o bloque (/policy o /rules)."""
+
+CODE_HINTS = [
+    r'\bCREATE\s+(TABLE|INDEX|VIEW|OR\s+REPLACE|PACKAGE|TRIGGER)\b',
+    r'\bSELECT\b.*\bFROM\b',
+    r'\bDECLARE\b|\bBEGIN\b|\bEXCEPTION\b',                # PL/SQL
+    r'Invoke-\w+|^\s*param\(|^\s*#requires',               # PowerShell
+    r'<\?xml|</\w+>',                                      # XML
+    r'^\s*--\s*POLICY_BUNDLE_JSON_START',                  # IPC hints
+    r'^\s*import\s+\w+|def\s+\w+\(',                       # Python
+    r'^\s*SET\s+ANSI_NULLS|^\s*GO\b',                      # T-SQL hints
+]
+
+HELP_HINTS = [
+    r'\b(help|ayuda|cómo usar|como uso|guía|comandos)\b',
+    r'quien eres|\bwho are you\b|\bwhat can you do\b|\bqué haces\b',
+    r'¿a que me puedes ayudar\??|a que me puedes ayudar\??'
+]
+
+def has_code(text: str) -> bool:
+    if not text:
+        return False
+    fenced = re.search(r'```.+?```', text, re.S | re.I) is not None
+    hints  = any(re.search(p, text, re.S | re.I | re.M) for p in CODE_HINTS)
+    return fenced or hints
+
+def detect_intent(text: str) -> str:
+    if not text:
+        return 'HELP'
+    t = text.strip()
+    if t.startswith('/'):
+        cmd = t.split()[0].lower()
+        if cmd in ['/help','/policy','/rules','/fix']:
+            return 'HELP'
+        return 'POLICY_QUERY'
+    if re.search('|'.join(HELP_HINTS), t, re.I):
+        return 'HELP'
+    if re.search(r'\b(policy|política|regla|rule|severidad|severity|INPUT-NO-CODE)\b', t, re.I):
+        return 'POLICY_QUERY'
+    if has_code(t):
+        return 'VALIDATE_CODE'
+    return 'SMALL_TALK'
+
+def render_template(intent: str) -> str:
+    if intent == 'HELP':
+        return TEMPLATE_HELP
+    if intent == 'POLICY_QUERY':
+        return TEMPLATE_POLICY_QUERY
+    return TEMPLATE_WHOAMI
+
 # ---------- Carga de policy ----------
 
 def load_policy(policy_path: str) -> Dict[str, Any]:
@@ -27,7 +114,7 @@ def load_policy(policy_path: str) -> Dict[str, Any]:
 
 # ---------- Reglas ----------
 
-def check_insert_columns(text: str, require: bool) -> List[Dict[str, Any]]:
+def check_insert_columns(text: str, require: bool) -> List[Dict[str, Any]]]:
     """
     INSERT INTO <obj> (...)  -> exige lista de columnas.
     """
@@ -161,6 +248,33 @@ def check_update_delete_where(text: str, enforce_update: bool, enforce_delete: b
                 })
     return issues
 
+# ---------- Aplicación de reglas sobre texto ----------
+
+def apply_rules_to_text(text: str, policy: Dict[str, Any]) -> List[Dict[str, Any]]:
+    issues: List[Dict[str, Any]] = []
+
+    # Parámetros de policy (opcionales)
+    require_insert_cols = policy.get("require_insert_column_list", False)
+    exc_prefix          = policy.get("require_exception_prefix", "")
+    forbid_star         = policy.get("forbid_select_star", False)
+    forbid_kws          = policy.get("forbid_keywords") or []
+    bitacora_cfg        = policy.get("require_bitacora_calls", {}) or {}
+    forbid_ord_pos      = policy.get("forbid_order_by_position", False)
+    enforce_upd_where   = policy.get("require_where_update", False)
+    enforce_del_where   = policy.get("require_where_delete", False)
+
+    # Aplicar reglas
+    issues += check_insert_columns(text, require_insert_cols)
+    issues += check_exception_prefix(text, exc_prefix)
+    issues += check_select_star(text, forbid_star)
+    if forbid_kws:
+        issues += check_forbidden_keywords(text, forbid_kws)
+    issues += check_bitacora(text, bitacora_cfg)
+    issues += check_order_by_position(text, forbid_ord_pos)
+    issues += check_update_delete_where(text, enforce_upd_where, enforce_del_where)
+
+    return issues
+
 # ---------- Reporte ----------
 
 def emit_report(all_issues: Dict[str, List[Dict[str, Any]]], policy: Dict[str, Any]) -> int:
@@ -195,7 +309,15 @@ def emit_report(all_issues: Dict[str, List[Dict[str, Any]]], policy: Dict[str, A
 # ---------- MAIN ----------
 
 def main():
-    if len(sys.argv) < 3:
+    stdin_text = read_stdin_text()
+
+    # Si no pasan argumentos y no hay intención de validar, responde ayuda/identidad.
+    if len(sys.argv) < 2:
+        intent = detect_intent(stdin_text)
+        if intent != 'VALIDATE_CODE':
+            print(render_template(intent))
+            sys.exit(0)
+        # Quiere validar pero falta policy ⇒ error de uso.
         print("Veredicto: NO CUMPLE")
         print("- [error] Uso: validator.py <policy.json> <archivo1.sql> [archivo2.sql ...]")
         sys.exit(2)
@@ -215,6 +337,22 @@ def main():
         print(f"- [error] Policy inválida: {e}")
         sys.exit(2)
 
+    # Caso: sin archivos, pero viene algo por STDIN.
+    if not targets and stdin_text:
+        intent = detect_intent(stdin_text)
+        if intent != 'VALIDATE_CODE':
+            print(render_template(intent))
+            sys.exit(0)
+        if not has_code(stdin_text):
+            print(TEMPLATE_NO_CODE)
+            sys.exit(0)
+
+        issues = apply_rules_to_text(stdin_text, policy)
+        all_issues = {"stdin.sql": issues} if issues else {}
+        exit_code = emit_report(all_issues, policy)
+        sys.exit(exit_code)
+
+    # Caso: archivos en argumentos
     # Exclusiones opcionales por regex
     skip_patterns = policy.get("skip_patterns", [])
     skip_res = [re.compile(p, flags=re.I) for p in skip_patterns] if skip_patterns else []
@@ -236,28 +374,7 @@ def main():
             print(f"- [warn] no se pudo leer {target}: {e}")
             continue
 
-        issues: List[Dict[str, Any]] = []
-
-        # Parámetros de policy (opcionales)
-        require_insert_cols = policy.get("require_insert_column_list", False)
-        exc_prefix          = policy.get("require_exception_prefix", "")
-        forbid_star         = policy.get("forbid_select_star", False)
-        forbid_kws          = policy.get("forbid_keywords") or []
-        bitacora_cfg        = policy.get("require_bitacora_calls", {}) or {}
-        forbid_ord_pos      = policy.get("forbid_order_by_position", False)
-        enforce_upd_where   = policy.get("require_where_update", False)
-        enforce_del_where   = policy.get("require_where_delete", False)
-
-        # Aplicar reglas
-        issues += check_insert_columns(text, require_insert_cols)
-        issues += check_exception_prefix(text, exc_prefix)
-        issues += check_select_star(text, forbid_star)
-        if forbid_kws:
-            issues += check_forbidden_keywords(text, forbid_kws)
-        issues += check_bitacora(text, bitacora_cfg)
-        issues += check_order_by_position(text, forbid_ord_pos)
-        issues += check_update_delete_where(text, enforce_upd_where, enforce_del_where)
-
+        issues = apply_rules_to_text(text, policy)
         if issues:
             all_issues[os.path.basename(target)] = issues
 
@@ -266,4 +383,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

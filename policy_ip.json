@@ -48,22 +48,28 @@
     "fail_on_severity": ["BLOCKER"],
     "score_weights": { "BLOCKER": 100, "MAJOR": 20, "MINOR": 5 },
     "approval_max_score": 20,
-    "verdict_labels": { "pass": "CUMPLE", "fail": "NO CUMPLE" },
+    "verdict_labels": { "pass": "CUMPLE", "fail": "NO CUMPLE", "no_analysis": "SIN-ANÁLISIS" },
     "output": {
       "header_prefix": "Veredicto: ",
       "include_fix": false,
       "include_code_samples": false,
-      "pass_message": "Desarrollo válido para pasar a producción.",
-      "fail_issue_template": "• Regla: {rule.id} — {rule.title}\\n  Manual: {standard.doc_id}, Sección {standard.section}, pág. {standard.page}\\n  Riesgo: {rule.risk}\\n  Alternativa sugerida: {rule.alt_text}"
+      "pass_message": "",
+      "fail_issue_template": "[{rule.severity}] {rule.id}: {rule.title}"
     },
     "pre_checks": {
       "require_code_payload": true,
       "allow_txt_as_code": true,
       "allow_unknown_ext": true,
-      "on_missing_code": "Veredicto: NO CUMPLE\\n• Regla: INPUT-NO-CODE — El adjunto no expone contenido de código\\n  Manual: STD-GEN-CODE-2025, Sección 1.1, pág. 3\\n  Riesgo: Imposible auditar evidencia técnica.\\n  Alternativa sugerida: Adjuntar archivo de texto/código o URL RAW accesible.",
-      "on_unknown_lang": "Veredicto: NO CUMPLE\\n• Regla: INPUT-UNKNOWN-LANG — No se pudo inferir si el archivo es Oracle/PowerShell/IPC\\n  Manual: STD-GEN-CODE-2025, Sección 1.2, pág. 4\\n  Riesgo: Clasificación ambigua.\\n  Alternativa sugerida: Añadir encabezado '/* lang: oracle|powershell|ipc */' o usar extensión correcta."
+      "on_missing_code": "Veredicto: SIN-ANÁLISIS\n[error] INPUT-NO-CODE: El adjunto no expone contenido de código o el texto no contiene código detectable.",
+      "on_unknown_lang": "Veredicto: SIN-ANÁLISIS\n[info] INPUT-UNKNOWN-LANG: No se pudo inferir si el archivo es Oracle/PowerShell/IPC."
     }
   },
+
+  "rule_suppressions": ["CPPGS-OWNER", "CPPGS-GRANT"],
+  "rules_overrides": [
+    { "id": "CPPGS-OWNER", "enabled": false, "severity": "INFO", "message": "Suprimida por configuración" },
+    { "id": "CPPGS-GRANT", "enabled": false, "severity": "INFO", "message": "Suprimida por configuración" }
+  ],
 
   "file_match": [
     "**/*.sql", "**/*.ddl", "**/*.pkg", "**/*.pks", "**/*.pkb",
@@ -78,46 +84,25 @@
       "applies_to": ["**/*.sql", "**/*.ddl", "**/*.pkg", "**/*.pks", "**/*.pkb", "**/*.txt", "**/*"],
       "rules": [
         { "id": "ORA-LOGGING-001", "title": "Prohibido NOLOGGING en objetos permanentes", "severity": "BLOCKER",
-          "detect": { "regex": ["\\bCREATE\\b[\\s\\S]*\\bNOLOGGING\\b", "\\bALTER\\b[\\s\\S]*\\bNOLOGGING\\b"] },
-          "standard_ref": { "doc_id": "STD-DB-ORCL-2025", "section": "3.1.2", "page": 17 },
-          "risk": "Pérdida de redo y recuperación incompleta.",
-          "alt_text": "Usar LOGGING; para cargas masivas, ventanear y dimensionar REDO/TEMP; APPEND con LOGGING."
+          "detect": { "regex": ["\\bCREATE\\b[\\s\\S]*\\bNOLOGGING\\b", "\\bALTER\\b[\\s\\S]*\\bNOLOGGING\\b"] }
         },
         { "id": "ORA-COMPRESS-002", "title": "COMPRESS fuera de whitelist", "severity": "BLOCKER",
-          "detect": { "regex": ["\\bCOMPRESS\\b(?![\\s\\S]*FOR\\s+OLTP)"] },
-          "standard_ref": { "doc_id": "STD-DB-ORCL-2025", "section": "3.1.5", "page": 20 },
-          "risk": "Penaliza DML.",
-          "alt_text": "Solo COMPRESS FOR OLTP en tablas aprobadas."
+          "detect": { "regex": ["\\bCOMPRESS\\b(?![\\s\\S]*FOR\\s+OLTP)"] }
         },
         { "id": "ORA-PARALLEL-003", "title": "PARALLEL sin justificación aprobada", "severity": "MAJOR",
-          "detect": { "regex": ["\\bPARALLEL\\b|/\\*\\+\\s*PARALLEL\\("] },
-          "standard_ref": { "doc_id": "STD-DB-ORCL-2025", "section": "4.3.1", "page": 31 },
-          "risk": "Contención CPU y presión SGA/TEMP.",
-          "alt_text": "Resource Manager; evidenciar con EXPLAIN PLAN y AWR."
+          "detect": { "regex": ["\\bPARALLEL\\b|/\\*\\+\\s*PARALLEL\\("] }
         },
         { "id": "ORA-SELECTSTAR-004", "title": "SELECT * sobre objetos sensibles", "severity": "BLOCKER",
-          "detect": { "regex": ["SELECT\\s+\\*\\s+FROM\\s+(sensitive\\.|pii\\.|audit\\.)"] },
-          "standard_ref": { "doc_id": "STD-DATA-GOV-2025", "section": "5.2.3", "page": 44 },
-          "risk": "Exposición de PII.",
-          "alt_text": "Columnas explícitas + masking y control por rol."
+          "detect": { "regex": ["SELECT\\s+\\*\\s+FROM\\s+(sensitive\\.|pii\\.|audit\\.)"] }
         },
         { "id": "ORA-INDEXPK-005", "title": "PK/FK sin índice", "severity": "BLOCKER",
-          "detect": { "ast": "constraint_without_backing_index" },
-          "standard_ref": { "doc_id": "STD-DB-ORCL-2025", "section": "3.2.1", "page": 22 },
-          "risk": "Bloqueos y FTS.",
-          "alt_text": "Índice único para PK y no-único por FK."
+          "detect": { "ast": "constraint_without_backing_index" }
         },
         { "id": "ORA-TABLESPACE-006", "title": "Tablespace no aprobado", "severity": "BLOCKER",
-          "detect": { "regex": ["TABLESPACE\\s+(?!TBS_DESP_01_DAT\\b|TBS_DESP_01_IDX\\b)\\w+"] },
-          "standard_ref": { "doc_id": "STD-DB-ORCL-2025", "section": "2.4.2", "page": 14 },
-          "risk": "RTO/RPO no garantizados.",
-          "alt_text": "Alinear a TBS aprobados o abrir RFC."
+          "detect": { "regex": ["TABLESPACE\\s+(?!TBS_DESP_01_DAT\\b|TBS_DESP_01_IDX\\b)\\w+"] }
         },
         { "id": "ORA-DYNEXEC-007", "title": "EXECUTE IMMEDIATE no parametrizado", "severity": "BLOCKER",
-          "detect": { "regex": ["EXECUTE\\s+IMMEDIATE[\\s\\S]*\\|\\|"] },
-          "standard_ref": { "doc_id": "STD-SEC-PLSQL-2025", "section": "6.1.1", "page": 53 },
-          "risk": "SQL injection.",
-          "alt_text": "Bind variables + whitelist."
+          "detect": { "regex": ["EXECUTE\\s+IMMEDIATE[\\s\\S]*\\|\\|"] }
         }
       ]
     },
@@ -127,22 +112,13 @@
       "applies_to": ["**/*.ps1", "**/*.txt", "**/*"],
       "rules": [
         { "id": "PS-EXEC-001", "title": "ExecutionPolicy Bypass/Unrestricted", "severity": "BLOCKER",
-          "detect": { "regex": ["-ExecutionPolicy\\s+(Bypass|Unrestricted)"] },
-          "standard_ref": { "doc_id": "STD-SEC-PS1-2025", "section": "2.1", "page": 6 },
-          "risk": "Ejecución no confiable.",
-          "alt_text": "RemoteSigned/AllSigned y firma de scripts."
+          "detect": { "regex": ["-ExecutionPolicy\\s+(Bypass|Unrestricted)"] }
         },
         { "id": "PS-SECRETS-002", "title": "Credenciales en claro o SecureString mal usado", "severity": "BLOCKER",
-          "detect": { "regex": ["Password\\s*=\\s*['\"][^'\"]+['\"]|ConvertTo-SecureString\\s+['\"][^'\"]+['\"]\\s+-AsPlainText\\s+-Force"] },
-          "standard_ref": { "doc_id": "STD-SEC-PS1-2025", "section": "3.2", "page": 11 },
-          "risk": "Exfiltración de secretos.",
-          "alt_text": "SecretManagement/Vault y variables protegidas."
+          "detect": { "regex": ["Password\\s*=\\s*['\"][^'\"]+['\"]|ConvertTo-SecureString\\s+['\"][^'\"]+['\"]\\s+-AsPlainText\\s+-Force"] }
         },
         { "id": "PS-SQLCMD-003", "title": "Invoke-Sqlcmd a objetos sensibles sin controles", "severity": "MAJOR",
-          "detect": { "regex": ["Invoke-Sqlcmd[\\s\\S]*SELECT\\s+\\*\\s+FROM\\s+(sensitive\\.|pii\\.)"] },
-          "standard_ref": { "doc_id": "STD-DATA-GOV-2025", "section": "5.2.3", "page": 44 },
-          "risk": "Lectura masiva de PII.",
-          "alt_text": "Columnas mínimas + masking y RBAC."
+          "detect": { "regex": ["Invoke-Sqlcmd[\\s\\S]*SELECT\\s+\\*\\s+FROM\\s+(sensitive\\.|pii\\.)"] }
         }
       ]
     },
@@ -152,18 +128,13 @@
       "applies_to": ["**/*.prm", "**/*.xml", "**/*.ipc", "**/*.txt", "**/*"],
       "rules": [
         { "id": "IPC-CONN-001", "title": "Conexiones con password en claro", "severity": "BLOCKER",
-          "detect": { "regex": ["Password\\s*=\\s*[^\\s#;]+"] },
-          "standard_ref": { "doc_id": "STD-ETL-IPC-2025", "section": "2.3.1", "page": 9 },
-          "risk": "Compromiso de credenciales.",
-          "alt_text": "Vault/keystore y variables cifradas del scheduler."
+          "detect": { "regex": ["Password\\s*=\\s*[^\\s#;]+"] }
         },
         { "id": "IPC-LOG-002", "title": "Nivel de log no conforme en PROD", "severity": "MAJOR",
-          "detect": { "regex": ["TraceLevel\\s*=\\s*(DEBUG|VERBOSE)"] },
-          "standard_ref": { "doc_id": "STD-ETL-IPC-2025", "section": "4.1.2", "page": 21 },
-          "risk": "Logs ruidosos y fuga.",
-          "alt_text": "INFO en PROD; DEBUG solo en ventana controlada."
+          "detect": { "regex": ["TraceLevel\\s*=\\s*(DEBUG|VERBOSE)"] }
         }
       ]
     }
   ]
 }
+

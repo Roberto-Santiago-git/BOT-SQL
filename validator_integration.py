@@ -3,6 +3,8 @@ import os
 import glob
 import subprocess
 import re
+import tempfile
+from pathlib import Path
 
 # No mostrar bloques de "Script corregido..."
 ALLOW_AUTOFIX = False
@@ -18,35 +20,24 @@ DROP_RULES = {
 POLICY_PATH = os.getenv("POLICY_PATH", "policies/policy_oracle.json")
 VALIDATOR_SCRIPT = os.getenv("VALIDATOR_SCRIPT", "validator/src/validator.py")
 
+# Entrada
+SUPPORTED_EXT = {".sql", ".pkb", ".pks", ".pls", ".txt", ".xml", ".prm", ".ddl", ".pkg"}
+MAX_SIZE = 500_000  # bytes
 
 def _strip_autofix(text: str) -> str:
-    """Elimina el bloque 'Script corregido ...' del final de la salida."""
     if ALLOW_AUTOFIX:
         return text
     return re.sub(r"(?is)\n*Script\s+corregido.*\Z", "", text).strip()
 
-
 def _filter_rule_blocks(text: str) -> str:
-    """Oculta hallazgos cuyos rule-id estén en DROP_RULES.
-       Soporta:
-         - 'Regla: <RULE>'
-         - '[error] <RULE>:' / '[warn] <RULE>:'
-       También quita una línea inmediata que empiece con 'Cita:' tras un hallazgo filtrado.
-    """
     if not DROP_RULES:
         return text
-
-    lines = text.splitlines()
-    keep = []
-    skip_next_cita = False
-
+    lines, keep, skip_next_cita = text.splitlines(), [], False
     for ln in lines:
-        # si la línea siguiente a un hallazgo filtrado es 'Cita:', saltarla
         if skip_next_cita and ln.strip().lower().startswith(("cita:", "cita :")):
             skip_next_cita = False
             continue
         skip_next_cita = False
-
         rule = None
         m1 = re.search(r"Regla:\s*([A-Z0-9_\-:]+)", ln)
         if m1:
@@ -55,46 +46,112 @@ def _filter_rule_blocks(text: str) -> str:
             m2 = re.search(r"\[(?:error|warn)\]\s*([A-Z0-9_\-:]+)\s*:", ln, flags=re.I)
             if m2:
                 rule = m2.group(1)
-
         if rule and rule in DROP_RULES:
             skip_next_cita = True
             continue
-
         keep.append(ln)
-
     return "\n".join(keep).strip()
-
 
 def _run_validator(files, policy_path: str | None = None) -> str:
     policy = policy_path or POLICY_PATH
-
     if not os.path.isfile(policy):
-        return f"⚠️ Policy no encontrada: {policy}"
+        return f"Validator\nVeredicto: SIN-ANÁLISIS [info] POLICY-NOT-FOUND: {policy}"
     if not os.path.isfile(VALIDATOR_SCRIPT):
-        return f"⚠️ Script de validador no encontrado: {VALIDATOR_SCRIPT}"
-
+        return f"Validator\nVeredicto: SIN-ANÁLISIS [info] ENGINE-NOT-FOUND: {VALIDATOR_SCRIPT}"
     cmd = ["python", "-u", VALIDATOR_SCRIPT, policy, *files]
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, check=False)
         out = (p.stdout or "") + (("\n" + p.stderr) if p.stderr else "")
         out = _strip_autofix(out)
         out = _filter_rule_blocks(out)
-        return out.strip() or "(sin salida)"
+        return out.strip() or "Validator\nVeredicto: SIN-ANÁLISIS [info] ENGINE-NO-OUTPUT"
     except Exception as e:
-        return f"❌ Error ejecutando validador: {e}"
-
+        return f"Validator\nVeredicto: SIN-ANÁLISIS [info] ENGINE-ERROR: {e}"
 
 def validate_sql_locally(policy_path: str | None = None) -> str:
-    """Ejecuta el validador contra todos los .sql/.pkb/.pks/.pls/.txt versionados."""
     files = [
         f for f in glob.glob("**/*", recursive=True)
-        if f.lower().endswith((".sql", ".pkb", ".pks", ".pls", ".txt"))
+        if f.lower().endswith(tuple(SUPPORTED_EXT))
     ]
     if not files:
-        return "No hay archivos a validar."
+        return "Validator\nVeredicto: SIN-ANÁLISIS [info] INPUT-NO-FILES: No hay archivos .sql/.pk* en el repo."
     return _run_validator(files, policy_path)
 
+# ---------- NUEVO: extracción de fuente ----------
+def _decode(b: bytes) -> str:
+    try:
+        return b.decode("utf-8-sig")
+    except Exception:
+        return b.decode("latin-1", errors="ignore")
 
-def handle_message(_message_text: str = "") -> str:
-    """Puerta para que tu bot invoque la validación."""
-    return validate_sql_locally()
+def extract_inline(text: str) -> str:
+    blocks = re.findall(r"```(?:\w+)?\s*([\s\S]*?)```", text or "", flags=re.MULTILINE)
+    blocks = [b.strip() for b in blocks if b.strip()]
+    if blocks:
+        code = "\n\n".join(blocks)
+        return code if len(code) <= MAX_SIZE else ""
+    U = (text or "").upper()
+    if any(k in U for k in ("CREATE ", "ALTER ", "INSERT ", "DECLARE ", "BEGIN ", "SELECT ")) and len(U) > 50:
+        return text.strip() if len(text) <= MAX_SIZE else ""
+    return ""
+
+def extract_from_attachments(attachments) -> tuple[str, str]:
+    """
+    attachments: iterable de dicts con:
+      - filename
+      - path  (si ya está en disco)  Ó
+      - bytes (contenido)
+    """
+    for a in attachments or []:
+        name = a.get("filename") or a.get("name") or "file"
+        ext = Path(name).suffix.lower()
+        if ext not in SUPPORTED_EXT:
+            continue
+        if "bytes" in a:
+            data = a["bytes"]
+        elif "path" in a and os.path.exists(a["path"]):
+            with open(a["path"], "rb") as f:
+                data = f.read()
+        else:
+            continue
+        if len(data) > MAX_SIZE:
+            return "__OVERSIZE__", name
+        return _decode(data), name
+    return "", ""
+
+def _write_temp(code: str, prefer_name: str | None = None) -> str:
+    ext = Path(prefer_name).suffix if prefer_name else ".sql"
+    with tempfile.NamedTemporaryFile("w", suffix=ext, delete=False, encoding="utf-8") as tf:
+        tf.write(code)
+        return tf.name
+
+# ---------- API principal ----------
+def handle_message(message_text: str = "", attachments=None, policy_path: str | None = None) -> str:
+    """
+    attachments: [{'filename': 'INSERT.sql', 'path': '/mnt/data/INSERT.sql'}] ó [{'filename':'x.sql','bytes': b'...'}]
+    Prioridad: 1) inline ``` ```  2) adjunto  3) repo local
+    """
+    # 1) inline
+    code = extract_inline(message_text)
+    if code:
+        tmp = _write_temp(code, "inline.sql")
+        try:
+            return _run_validator([tmp], policy_path)
+        finally:
+            try: os.unlink(tmp)
+            except: pass
+
+    # 2) adjunto
+    code, fname = extract_from_attachments(attachments)
+    if code == "__OVERSIZE__":
+        return f"Validator\nVeredicto: SIN-ANÁLISIS [info] INPUT-OVERSIZE: {fname} > {MAX_SIZE} bytes. Divide el archivo."
+    if code:
+        tmp = _write_temp(code, fname or "attachment.sql")
+        try:
+            return _run_validator([tmp], policy_path)
+        finally:
+            try: os.unlink(tmp)
+            except: pass
+
+    # 3) repo local
+    return validate_sql_locally(policy_path)

@@ -99,3 +99,7 @@ def handle_mensaje(usuario_texto: str = None, adjunto_bytes: bytes = None, adjun
     if not out.startswith("Validator"):
         out = "Validator\n" + out
     return out
+    # compat: algunos lugares siguen importando handle_message
+def handle_message(*args, **kwargs):
+    return handle_mensaje(*args, **kwargs)
+

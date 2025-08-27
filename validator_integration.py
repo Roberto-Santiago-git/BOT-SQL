@@ -1,129 +1,100 @@
 # validator_integration.py
-import os, glob, subprocess, re, tempfile
-from pathlib import Path
+import os
+import glob
+import subprocess
+import re
 
-# === Config ===
-ALLOW_AUTOFIX = False  # no mostrar "Script corregido ..."
-# Oculta reglas que no quieres que aparezcan en la salida del bot:
+# No mostrar bloques de "Script corregido..."
+ALLOW_AUTOFIX = False
+
+# Ocultar hallazgos por rule-id (ajusta según necesites)
 DROP_RULES = {
     "CPPGS-SCHEMA",
     "CPPGS-OWNER",
     "SCHEMA-USE-DEV",
 }
 
-POLICY_PATH  = os.getenv("POLICY_PATH", "policies/policy_oracle.json")
-SCRIPT_PATH  = os.getenv("VALIDATOR_SCRIPT", "validator/src/validator.py")
+# Rutas (puedes sobreescribir con variables de entorno)
+POLICY_PATH = os.getenv("POLICY_PATH", "policies/policy_oracle.json")
+VALIDATOR_SCRIPT = os.getenv("VALIDATOR_SCRIPT", "validator/src/validator.py")
 
-# === Helpers ===
-def _run_validator(policy_path: str, files: list[str]) -> tuple[int, str]:
-    """Ejecuta el validador y retorna (exit_code, stdout+stderr)."""
-    cmd = ["python", SCRIPT_PATH, policy_path, *files]
-    p = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    out = (p.stdout or "") + (("\n" + p.stderr) if p.stderr else "")
-    return p.returncode, out
 
-def _strip_autofix_block(text: str) -> str:
+def _strip_autofix(text: str) -> str:
+    """Elimina el bloque 'Script corregido ...' del final de la salida."""
     if ALLOW_AUTOFIX:
         return text
-    # quita todo lo que siga a "Script corregido (copiar y pegar):"
-    return re.sub(r"(?is)\n+Script\s+corregido.*$", "", text).strip()
+    return re.sub(r"(?is)\n*Script\s+corregido.*\Z", "", text).strip()
+
 
 def _filter_rule_blocks(text: str) -> str:
-    """Quita bloques de hallazgo cuyo 'Regla: <RULE>' esté en DROP_RULES."""
+    """Oculta hallazgos cuyos rule-id estén en DROP_RULES.
+       Soporta:
+         - 'Regla: <RULE>'
+         - '[error] <RULE>:' / '[warn] <RULE>:'
+       También quita una línea inmediata que empiece con 'Cita:' tras un hallazgo filtrado.
+    """
     if not DROP_RULES:
         return text
+
     lines = text.splitlines()
-    keep, skip = [], False
+    keep = []
+    skip_next_cita = False
+
     for ln in lines:
-        m = re.search(r"Regla:\s*([A-Z0-9_\-:]+)", ln)
-        if m and m.group(1) in DROP_RULES:
-            skip = True
-        if not skip:
-            keep.append(ln)
-        if ln.strip() == "":
-            skip = False
+        # si la línea siguiente a un hallazgo filtrado es 'Cita:', saltarla
+        if skip_next_cita and ln.strip().lower().startswith(("cita:", "cita :")):
+            skip_next_cita = False
+            continue
+        skip_next_cita = False
+
+        rule = None
+        m1 = re.search(r"Regla:\s*([A-Z0-9_\-:]+)", ln)
+        if m1:
+            rule = m1.group(1)
+        else:
+            m2 = re.search(r"\[(?:error|warn)\]\s*([A-Z0-9_\-:]+)\s*:", ln, flags=re.I)
+            if m2:
+                rule = m2.group(1)
+
+        if rule and rule in DROP_RULES:
+            skip_next_cita = True
+            continue
+
+        keep.append(ln)
+
     return "\n".join(keep).strip()
 
-def _ensure_header(text: str) -> str:
-    """Asegura que inicie con 'Validator' (alineado a tus instrucciones)."""
-    t = text.lstrip()
-    return ("Validator\n" + t) if not t.startswith("Validator") else text
 
-def _sanitize(text: str) -> str:
-    text = _strip_autofix_block(text)
-    text = _filter_rule_blocks(text)
-    text = _ensure_header(text)
-    return text.strip()
+def _run_validator(files, policy_path: str | None = None) -> str:
+    policy = policy_path or POLICY_PATH
 
-def _ensure_policy() -> str | None:
-    if Path(POLICY_PATH).is_file():
-        return POLICY_PATH
-    return None
+    if not os.path.isfile(policy):
+        return f"⚠️ Policy no encontrada: {policy}"
+    if not os.path.isfile(VALIDATOR_SCRIPT):
+        return f"⚠️ Script de validador no encontrado: {VALIDATOR_SCRIPT}"
 
-# === API pública ===
-def validate_sql_locally(policy_path: str | None = None, files: list[str] | None = None) -> str:
-    """Valida repo completo o lista de archivos específica."""
-    policy = policy_path or _ensure_policy()
-    if not policy:
-        return f"Validator\nVeredicto: NO CUMPLE\n[error] POLICY-NOT-FOUND: No se encontró la policy en {POLICY_PATH}"
-
-    if files is None:
-        files = [
-            f for f in glob.glob("**/*", recursive=True)
-            if f.lower().endswith((".sql", ".pkb", ".pks", ".pls", ".txt"))
-        ]
-
-    if not files:
-        return "Validator\nVeredicto: CUMPLE"
-
-    code, out = _run_validator(policy, files)
-    if not out.strip():
-        out = f"Veredicto: {'CUMPLE' if code == 0 else 'NO CUMPLE'}"
-    return _sanitize(out)
-
-def handle_mensaje(usuario_texto: str | None = None,
-                   adjunto_bytes: bytes | None = None,
-                   adjunto_nombre: str | None = None,
-                   policy_path: str | None = None,
-                   files: list[str] | None = None) -> str:
-    """
-    Uso en el bot:
-      - Texto en el mensaje: handle_mensaje(usuario_texto=sql_text)
-      - Con adjunto: handle_mensaje(adjunto_bytes=b, adjunto_nombre="archivo.sql")
-      - Lista explícita de rutas: handle_mensaje(files=['a.sql','b.sql'])
-    """
-    policy = policy_path or _ensure_policy()
-    if not policy:
-        return f"Validator\nVeredicto: NO CUMPLE\n[error] POLICY-NOT-FOUND: No se encontró la policy en {POLICY_PATH}"
-
-    # Prioridad: files explícitos > adjunto > texto > repo completo
-    if files:
-        return validate_sql_locally(policy_path=policy, files=files)
-
-    tmp_path = None
+    cmd = ["python", "-u", VALIDATOR_SCRIPT, policy, *files]
     try:
-        if adjunto_bytes is not None:
-            suf = Path(adjunto_nombre or "adjunto.sql").suffix or ".sql"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suf) as tf:
-                tf.write(adjunto_bytes)
-                tmp_path = tf.name
-            return validate_sql_locally(policy_path=policy, files=[tmp_path])
+        p = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        out = (p.stdout or "") + (("\n" + p.stderr) if p.stderr else "")
+        out = _strip_autofix(out)
+        out = _filter_rule_blocks(out)
+        return out.strip() or "(sin salida)"
+    except Exception as e:
+        return f"❌ Error ejecutando validador: {e}"
 
-        if (usuario_texto or "").strip():
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".sql") as tf:
-                tf.write(usuario_texto.encode("utf-8", errors="ignore"))
-                tmp_path = tf.name
-            return validate_sql_locally(policy_path=policy, files=[tmp_path])
 
-        # Sin insumo: valida repo completo
-        return validate_sql_locally(policy_path=policy, files=None)
-    finally:
-        if tmp_path:
-            try: os.unlink(tmp_path)
-            except: pass
+def validate_sql_locally(policy_path: str | None = None) -> str:
+    """Ejecuta el validador contra todos los .sql/.pkb/.pks/.pls/.txt versionados."""
+    files = [
+        f for f in glob.glob("**/*", recursive=True)
+        if f.lower().endswith((".sql", ".pkb", ".pks", ".pls", ".txt"))
+    ]
+    if not files:
+        return "No hay archivos a validar."
+    return _run_validator(files, policy_path)
 
-# Alias para compatibilidad con tu bot actual
+
 def handle_message(_message_text: str = "") -> str:
-    """Mantiene compatibilidad: valida repo completo."""
+    """Puerta para que tu bot invoque la validación."""
     return validate_sql_locally()
-

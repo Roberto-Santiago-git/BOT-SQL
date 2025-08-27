@@ -1,127 +1,101 @@
 # validator_integration.py
-import os
-import re
-import tempfile
-import subprocess
+import os, re, tempfile
 from pathlib import Path
+from subprocess import run
 
-# --- Config de salida del bot ---
-STRIP_AUTOFIX = True                 # quita cualquier bloque "Script corregido..."
-DROP_RULES = {"CPPGS-SCHEMA"}        # oculta hallazgos con esos rule_id
+# === CONFIG ===
+ALLOW_AUTOFIX = False          # NO imprimir bloque "Script corregido"
+DROP_RULES_EXACT = {           # IDs exactos a ocultar (si aparecen)
+    "CPPGS-SCHEMA", "CPPGS-OWNER", "CPPGS-LOG-START", "CPPGS-LOG-END",
+    "CPPGS-LOG-ERROR", "CPPGS-EXCEPTION", "CPPGS-NAMING", "CPPGS-COMMENT",
+}
+DROP_RULES_PREFIX = ("CPPGS-",)  # Oculta cualquier regla que inicie con estos prefijos
 
-# --- Rutas base / descubrimiento ---
+# === RUTAS ===
 ROOT = Path(__file__).resolve().parent
-ENV_POLICY = os.environ.get("VALIDATOR_POLICY")
-ENV_SCRIPT = os.environ.get("VALIDATOR_SCRIPT")
-
-POLICY_CANDIDATES = [
-    ENV_POLICY,
-    ROOT / "policy_oracle" / "policy_oracle.json",
-    ROOT / "policy_oracle.json",
-    ROOT / "policy_ip.json",
-]
-SCRIPT_CANDIDATES = [
-    ENV_SCRIPT,
-    ROOT / "validator" / "src" / "validator.py",
-    ROOT / "validator.py",
-]
-
-def _first_existing(paths):
-    for p in paths:
-        if p and Path(p).exists():
-            return str(p)
-    for p in paths:
-        if p:
-            return str(p)
-    return "validator.py"
+POLICY = os.environ.get("VALIDATOR_POLICY") or str(ROOT / "policy_oracle.json")
+SCRIPT = os.environ.get("VALIDATOR_SCRIPT") or str(ROOT / "validator" / "src" / "validator.py")
 
 def _python_cmd():
-    exe = os.environ.get("PYTHON")
-    if exe:
-        return [exe]
-    if os.name == "nt":
-        return ["py", "-3"]
-    return ["python3"]
+    return [os.environ.get("PYTHON") or ("py" if os.name == "nt" else "python3")]
 
-POLICY = _first_existing(POLICY_CANDIDATES)
-SCRIPT = _first_existing(SCRIPT_CANDIDATES)
-
-# --- Post-procesado de salida ---
-def _clean_output(text: str) -> str:
-    out = text or ""
-
-    # 1) Quitar bloque "Script corregido ..."
-    if STRIP_AUTOFIX:
-        out = re.sub(r"(?is)\n+Script corregido.*$", "", out).strip()
-
-    # 2) Filtrar bloques por rule_id (línea "  Regla: <ID> — ...")
-    if DROP_RULES:
-        lines = out.splitlines()
-        keep, drop = [], False
-        for ln in lines:
-            m = re.search(r"Regla:\s*([A-Z0-9_\-:]+)", ln)
-            if m and m.group(1) in DROP_RULES:
-                drop = True
-            if not drop:
-                keep.append(ln)
-            if ln.strip() == "":          # fin de bloque de hallazgo
-                drop = False
-        out = "\n".join(keep).strip()
-
-    return out
-
-# --- Ejecución del validador ---
 def _run_validator(args, input_text=None, timeout=30):
     cmd = _python_cmd() + [SCRIPT, POLICY] + list(args)
-    try:
-        p = subprocess.run(
-            cmd,
-            input=input_text,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=ROOT,
-        )
-        merged = ((p.stdout or "") + ("\n" + p.stderr if p.stderr else "")).strip()
-        return p.returncode, _clean_output(merged)
-    except subprocess.TimeoutExpired:
-        return 99, "Veredicto: NO CUMPLE\n- [error] Tiempo de espera agotado al validar."
-    except FileNotFoundError as e:
-        return 98, f"Veredicto: NO CUMPLE\n- [error] No se encontró ejecutable o script: {e}"
-    except Exception as e:
-        return 97, f"Veredicto: NO CUMPLE\n- [error] Fallo al ejecutar validador: {e}"
+    p = run(cmd, input=input_text, capture_output=True, text=True, timeout=timeout, cwd=ROOT)
+    out = (p.stdout or "") + (("\n" + p.stderr) if p.stderr else "")
+    return (p.returncode, out.strip())
 
-# --- APIs para tu bot ---
-def validar_sql_por_ruta(ruta_sql: str, timeout=30):
-    return _run_validator([ruta_sql], timeout=timeout)
+def _strip_autofix_and_branding(text: str) -> str:
+    # quitar bloque "Script corregido ..." si existiera
+    if not ALLOW_AUTOFIX:
+        text = re.sub(r"(?is)\n+Script corregido.*$", "", text).strip()
+    # quitar cabeceras ajenas como "Validator CyGD"
+    text = re.sub(r"(?im)^\s*Validator\s+CyGD\s*$\n?", "", text)
+    return text
 
-def validar_sql_por_texto(sql_text: str, timeout=30):
-    return _run_validator(["-"], input_text=(sql_text or ""), timeout=timeout)
+def _drop_rule_blocks(text: str) -> str:
+    """
+    El output de tu bot ya viene en forma:
+      [error] RULE_ID: descripción
+    (bloques separados por una línea en blanco)
+    También soporta el formato de nuestro validator:
+      Regla: RULE_ID — desc
+    """
+    lines = text.splitlines()
+    kept = []
+    skip = False
+
+    for ln in lines:
+        # 1) Formato [severity] RULE_ID:
+        m = re.match(r"^\s*\[(?:error|warn|warning)\]\s*([A-Z0-9_\-]+)\s*:", ln, flags=re.I)
+        # 2) Formato "Regla: RULE_ID — desc"
+        r = re.search(r"Regla:\s*([A-Z0-9_\-:]+)", ln)
+
+        rule = None
+        if m: rule = m.group(1)
+        elif r: rule = r.group(1)
+
+        if rule:
+            # decidir si ocultar este bloque
+            hide = (rule in DROP_RULES_EXACT) or any(rule.startswith(p) for p in DROP_RULES_PREFIX)
+            skip = hide
+
+        if not skip:
+            kept.append(ln)
+
+        # fin de bloque: línea en blanco
+        if ln.strip() == "":
+            skip = False
+
+    return "\n".join(kept).strip()
 
 def handle_mensaje(usuario_texto: str = None, adjunto_bytes: bytes = None, adjunto_nombre: str = None):
     if not Path(POLICY).exists():
-        return f"Veredicto: NO CUMPLE\n- [error] Policy no encontrada: {POLICY}"
+        return f"Validator\nVeredicto: NO CUMPLE\n[error] TOOL-NO-POLICY: No encuentro la policy en {POLICY}"
     if not Path(SCRIPT).exists():
-        return f"Veredicto: NO CUMPLE\n- [error] Script no encontrado: {SCRIPT}"
+        return f"Validator\nVeredicto: NO CUMPLE\n[error] TOOL-NO-SCRIPT: No encuentro el script en {SCRIPT}"
 
     if adjunto_bytes is not None:
         ext = (Path(adjunto_nombre or "").suffix or ".sql").lower()
         if ext not in {".sql", ".pkb", ".pks", ".pkg", ".ddl", ".txt"}:
-            return "Veredicto: NO CUMPLE\n- [error] Formato no soportado."
-        tmp = None
+            return "Validator\nVeredicto: NO CUMPLE\n[error] INPUT-TYPE: Formato no soportado."
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as f:
+            f.write(adjunto_bytes)
+            tmp = f.name
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as f:
-                f.write(adjunto_bytes or b"")
-                tmp = f.name
-            _, out = validar_sql_por_ruta(tmp)
+            _, out = _run_validator([tmp])
         finally:
-            if tmp:
-                try: os.unlink(tmp)
-                except: pass
-        return out
+            try: os.unlink(tmp)
+            except: pass
+    else:
+        if not (usuario_texto or "").strip():
+            return "Validator\nVeredicto: NO CUMPLE\n[error] INPUT-NO-CODE: No recibí SQL ni archivo."
+        _, out = _run_validator(["-"], input_text=usuario_texto)
 
-    if (usuario_texto or "").strip():
-        _, out = validar_sql_por_texto(usuario_texto)
-        return out
+    out = _strip_autofix_and_branding(out)
+    out = _drop_rule_blocks(out)
 
-    return "Veredicto: NO CUMPLE\n- [error] No recibí SQL ni archivo."
+    # Garantiza encabezado mínimo si el validador solo imprimió el veredicto
+    if not out.startswith("Validator"):
+        out = "Validator\n" + out
+    return out

@@ -9,18 +9,21 @@ from pathlib import Path
 # No mostrar bloques de "Script corregido..."
 ALLOW_AUTOFIX = False
 
-# Ocultar hallazgos por rule-id (ajusta según necesites)
+# Ocultar hallazgos por rule-id
 DROP_RULES = {
     "CPPGS-SCHEMA",
     "CPPGS-OWNER",
     "SCHEMA-USE-DEV",
 }
 
-# Rutas (puedes sobreescribir con variables de entorno)
+# Rutas
 POLICY_PATH = os.getenv("POLICY_PATH", "policies/policy_oracle.json")
 VALIDATOR_SCRIPT = os.getenv("VALIDATOR_SCRIPT", "validator/src/validator.py")
 
-# Entrada
+# Carpeta donde tu bot guarda adjuntos (ajústala si usas otra)
+ATTACHMENTS_DIR = os.getenv("ATTACHMENTS_DIR", "/mnt/data")
+
+# Extensiones y límites
 SUPPORTED_EXT = {".sql", ".pkb", ".pks", ".pls", ".txt", ".xml", ".prm", ".ddl", ".pkg"}
 MAX_SIZE = 500_000  # bytes
 
@@ -32,7 +35,8 @@ def _strip_autofix(text: str) -> str:
 def _filter_rule_blocks(text: str) -> str:
     if not DROP_RULES:
         return text
-    lines, keep, skip_next_cita = text.splitlines(), [], False
+    lines = text.splitlines()
+    keep, skip_next_cita = [], False
     for ln in lines:
         if skip_next_cita and ln.strip().lower().startswith(("cita:", "cita :")):
             skip_next_cita = False
@@ -71,20 +75,20 @@ def _run_validator(files, policy_path: str | None = None) -> str:
 def validate_sql_locally(policy_path: str | None = None) -> str:
     files = [
         f for f in glob.glob("**/*", recursive=True)
-        if f.lower().endswith(tuple(SUPPORTED_EXT))
+        if Path(f).suffix.lower() in SUPPORTED_EXT
     ]
     if not files:
-        return "Validator\nVeredicto: SIN-ANÁLISIS [info] INPUT-NO-FILES: No hay archivos .sql/.pk* en el repo."
+        return "Validator\nVeredicto: SIN-ANÁLISIS [info] INPUT-NO-FILES: No hay scripts en el repo."
     return _run_validator(files, policy_path)
 
-# ---------- NUEVO: extracción de fuente ----------
+# ---------- extracción de fuente ----------
 def _decode(b: bytes) -> str:
     try:
         return b.decode("utf-8-sig")
     except Exception:
         return b.decode("latin-1", errors="ignore")
 
-def extract_inline(text: str) -> str:
+def _extract_inline(text: str) -> str:
     blocks = re.findall(r"```(?:\w+)?\s*([\s\S]*?)```", text or "", flags=re.MULTILINE)
     blocks = [b.strip() for b in blocks if b.strip()]
     if blocks:
@@ -95,44 +99,37 @@ def extract_inline(text: str) -> str:
         return text.strip() if len(text) <= MAX_SIZE else ""
     return ""
 
-def extract_from_attachments(attachments) -> tuple[str, str]:
-    """
-    attachments: iterable de dicts con:
-      - filename
-      - path  (si ya está en disco)  Ó
-      - bytes (contenido)
-    """
-    for a in attachments or []:
-        name = a.get("filename") or a.get("name") or "file"
-        ext = Path(name).suffix.lower()
-        if ext not in SUPPORTED_EXT:
-            continue
-        if "bytes" in a:
-            data = a["bytes"]
-        elif "path" in a and os.path.exists(a["path"]):
-            with open(a["path"], "rb") as f:
-                data = f.read()
-        else:
-            continue
-        if len(data) > MAX_SIZE:
-            return "__OVERSIZE__", name
-        return _decode(data), name
-    return "", ""
+def _find_attachment_file() -> str | None:
+    """Toma el adjunto más reciente en ATTACHMENTS_DIR con extensión soportada."""
+    d = Path(ATTACHMENTS_DIR)
+    if not d.exists():
+        return None
+    candidates = [p for p in d.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXT]
+    if not candidates:
+        return None
+    # más reciente por mtime
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    path = str(candidates[0])
+    if os.path.getsize(path) > MAX_SIZE:
+        return "__OVERSIZE__"
+    return path
 
-def _write_temp(code: str, prefer_name: str | None = None) -> str:
-    ext = Path(prefer_name).suffix if prefer_name else ".sql"
+def _write_temp(code: str, prefer_name: str = "inline.sql") -> str:
+    ext = Path(prefer_name).suffix or ".sql"
     with tempfile.NamedTemporaryFile("w", suffix=ext, delete=False, encoding="utf-8") as tf:
         tf.write(code)
         return tf.name
 
-# ---------- API principal ----------
-def handle_message(message_text: str = "", attachments=None, policy_path: str | None = None) -> str:
+# ---------- API PRINCIPAL (no cambies la firma que ya usas) ----------
+def handle_message(_message_text: str = "", policy_path: str | None = None) -> str:
     """
-    attachments: [{'filename': 'INSERT.sql', 'path': '/mnt/data/INSERT.sql'}] ó [{'filename':'x.sql','bytes': b'...'}]
-    Prioridad: 1) inline ``` ```  2) adjunto  3) repo local
+    Prioridad:
+      1) Código inline entre ``` ```
+      2) Adjunto en ATTACHMENTS_DIR (el más reciente)
+      3) Fallback: escaneo del repo
     """
     # 1) inline
-    code = extract_inline(message_text)
+    code = _extract_inline(_message_text or "")
     if code:
         tmp = _write_temp(code, "inline.sql")
         try:
@@ -142,16 +139,11 @@ def handle_message(message_text: str = "", attachments=None, policy_path: str | 
             except: pass
 
     # 2) adjunto
-    code, fname = extract_from_attachments(attachments)
-    if code == "__OVERSIZE__":
-        return f"Validator\nVeredicto: SIN-ANÁLISIS [info] INPUT-OVERSIZE: {fname} > {MAX_SIZE} bytes. Divide el archivo."
-    if code:
-        tmp = _write_temp(code, fname or "attachment.sql")
-        try:
-            return _run_validator([tmp], policy_path)
-        finally:
-            try: os.unlink(tmp)
-            except: pass
+    apath = _find_attachment_file()
+    if apath == "__OVERSIZE__":
+        return "Validator\nVeredicto: SIN-ANÁLISIS [info] INPUT-OVERSIZE: archivo > 500 KB."
+    if apath:
+        return _run_validator([apath], policy_path)
 
-    # 3) repo local
+    # 3) repo
     return validate_sql_locally(policy_path)

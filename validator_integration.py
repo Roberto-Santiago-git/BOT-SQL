@@ -89,6 +89,7 @@ def _decode(b: bytes) -> str:
         return b.decode("latin-1", errors="ignore")
 
 def _extract_inline(text: str) -> str:
+    # Soporta bloques ```...``` o SQL claro en el mensaje
     blocks = re.findall(r"```(?:\w+)?\s*([\s\S]*?)```", text or "", flags=re.MULTILINE)
     blocks = [b.strip() for b in blocks if b.strip()]
     if blocks:
@@ -101,7 +102,7 @@ def _extract_inline(text: str) -> str:
 
 def _pick_file_by_name(message_text: str) -> str | None:
     """
-    Si el usuario escribe:  INSERT TBL_REF_PROC 3.sql
+    Si el usuario escribe:  INSERT TBL_REF_PROC 4.sql
     busca ese archivo en ATTACHMENTS_DIR y regresa su ruta.
     """
     if not message_text:
@@ -139,10 +140,11 @@ def _write_temp(code: str, prefer_name: str = "inline.sql") -> str:
 def handle_message(_message_text: str = "", policy_path: str | None = None) -> str:
     """
     Prioridad:
-      1) Código inline entre ``` ```
+      1) Código inline entre ``` ``` del propio mensaje del usuario
       2) Archivo por NOMBRE escrito en el mensaje dentro de ATTACHMENTS_DIR
       3) Último adjunto en ATTACHMENTS_DIR
       4) Fallback: escaneo del repo
+    Nota: el caller debe pasar el texto del chat: handle_message(_message_text=incoming_text)
     """
     # 1) inline
     code = _extract_inline(_message_text or "")
@@ -170,3 +172,4 @@ def handle_message(_message_text: str = "", policy_path: str | None = None) -> s
 
     # 4) repo
     return validate_sql_locally(policy_path)
+

@@ -20,7 +20,7 @@ DROP_RULES = {
 POLICY_PATH = os.getenv("POLICY_PATH", "policies/policy_oracle.json")
 VALIDATOR_SCRIPT = os.getenv("VALIDATOR_SCRIPT", "validator/src/validator.py")
 
-# Carpeta donde tu bot guarda adjuntos (ajústala si usas otra)
+# Carpeta donde se guardan adjuntos (ajústala si usas otra)
 ATTACHMENTS_DIR = os.getenv("ATTACHMENTS_DIR", "/mnt/data")
 
 # Extensiones y límites
@@ -99,20 +99,35 @@ def _extract_inline(text: str) -> str:
         return text.strip() if len(text) <= MAX_SIZE else ""
     return ""
 
+def _pick_file_by_name(message_text: str) -> str | None:
+    """
+    Si el usuario escribe:  INSERT TBL_REF_PROC 3.sql
+    busca ese archivo en ATTACHMENTS_DIR y regresa su ruta.
+    """
+    if not message_text:
+        return None
+    pat = r'[\"\']?([A-Za-z0-9 _\-\.\(\)]+(?:\.sql|\.pkb|\.pks|\.pls|\.txt|\.xml|\.prm|\.ddl|\.pkg))[\"\']?'
+    for name in re.findall(pat, message_text, flags=re.I):
+        p = Path(ATTACHMENTS_DIR) / name
+        if p.exists() and p.is_file() and p.suffix.lower() in SUPPORTED_EXT:
+            if p.stat().st_size > MAX_SIZE:
+                return "__OVERSIZE__"
+            return str(p)
+    return None
+
 def _find_attachment_file() -> str | None:
-    """Toma el adjunto más reciente en ATTACHMENTS_DIR con extensión soportada."""
+    """Adjunto más reciente en ATTACHMENTS_DIR."""
     d = Path(ATTACHMENTS_DIR)
     if not d.exists():
         return None
     candidates = [p for p in d.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXT]
     if not candidates:
         return None
-    # más reciente por mtime
     candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    path = str(candidates[0])
-    if os.path.getsize(path) > MAX_SIZE:
+    path = candidates[0]
+    if path.stat().st_size > MAX_SIZE:
         return "__OVERSIZE__"
-    return path
+    return str(path)
 
 def _write_temp(code: str, prefer_name: str = "inline.sql") -> str:
     ext = Path(prefer_name).suffix or ".sql"
@@ -120,13 +135,14 @@ def _write_temp(code: str, prefer_name: str = "inline.sql") -> str:
         tf.write(code)
         return tf.name
 
-# ---------- API PRINCIPAL (no cambies la firma que ya usas) ----------
+# ---------- API PRINCIPAL ----------
 def handle_message(_message_text: str = "", policy_path: str | None = None) -> str:
     """
     Prioridad:
       1) Código inline entre ``` ```
-      2) Adjunto en ATTACHMENTS_DIR (el más reciente)
-      3) Fallback: escaneo del repo
+      2) Archivo por NOMBRE escrito en el mensaje dentro de ATTACHMENTS_DIR
+      3) Último adjunto en ATTACHMENTS_DIR
+      4) Fallback: escaneo del repo
     """
     # 1) inline
     code = _extract_inline(_message_text or "")
@@ -138,12 +154,19 @@ def handle_message(_message_text: str = "", policy_path: str | None = None) -> s
             try: os.unlink(tmp)
             except: pass
 
-    # 2) adjunto
+    # 2) archivo por nombre
+    named = _pick_file_by_name(_message_text or "")
+    if named == "__OVERSIZE__":
+        return "Validator\nVeredicto: SIN-ANÁLISIS [info] INPUT-OVERSIZE: archivo > 500 KB."
+    if named:
+        return _run_validator([named], policy_path)
+
+    # 3) último adjunto
     apath = _find_attachment_file()
     if apath == "__OVERSIZE__":
         return "Validator\nVeredicto: SIN-ANÁLISIS [info] INPUT-OVERSIZE: archivo > 500 KB."
     if apath:
         return _run_validator([apath], policy_path)
 
-    # 3) repo
+    # 4) repo
     return validate_sql_locally(policy_path)

@@ -1,185 +1,295 @@
-{
-  "version": "2025-08-22",
-  "output": { "prefix": "Veredicto: " },
-  "assist": {
-    "mode": "input_only",
-    "defaults": { "oracle": { "tablespace": "<TABLESPACE>" } },
-    "extractors": {
-      "oracle": {
-        "create_table": "(?is)create\\s+table\\s+(?:(\\w+)\\.)?(\\w+)\\s*\\((.*?)\\)",
-        "column_def": "(?im)^\\s*(\\w+)\\s+([A-Z]+(?:\\(\\d+(?:,\\d+)?\\))?)",
-        "partition_key": "(?is)partition\\s+by\\s+\\w+\\s*\\(\\s*([A-Z0-9_]+)\\s*\\)",
-        "partition_name": "(?i)\\bpartition\\s+([A-Z0-9_]{1,30})\\b"
-      },
-      "index_on": "(?is)create\\s+(?:unique\\s+)?index\\s+(\\w+)\\s+on\\s+(?:(\\w+)\\.)?(\\w+)\\s*\\(([^)]+)\\)"
-    }
+﻿{
+  "policy_version": "1.0.2",
+  "engine": "oracle-19c",
+  "mode": "static_code_scan",
+  "owner_schemas": ["CPPGS"],
+  "approved_tablespaces": {
+    "tables": ["TBS_DESP_01_DAT"],
+    "indexes": ["TBS_DESP_01_IDX"]
   },
-  "namespaces": [
+  "reporting": {
+    "fail_on_severity": ["BLOCKER"],
+    "score_weights": { "BLOCKER": 100, "MAJOR": 20, "MINOR": 5 },
+    "approval_max_score": 20,
+    "verdict_labels": { "pass": "CUMPLE", "fail": "NO CUMPLE" }
+  },
+  "file_match": ["**/*.sql","**/*.ddl","**/*.pkg","**/*.pks","**/*.pkb","**/*.txt"],
+  "rules": [
     {
-      "namespace": "oracle",
-      "applies_to": ["*.sql","*.pks","*.pkb","*.prc","*.fnc","*.txt"],
-      "rules": [
-        {
-          "id": "ORC-SELECT-NO-STAR",
-          "desc": "Prohibido SELECT *",
-          "pattern": "(?i)select\\s+\\*\\s+from\\s+([A-Z0-9_.]+)",
-          "severity": "error",
-          "explain": "Enumera columnas explícitas.",
-          "quote": "En SELECT se deben especificar columnas; se prohíbe el asterisco.",
-          "cite": "Oracle » Columnas en SELECT e INSERT",
-          "fix": {
-            "type": "replace",
-            "locator": "(?i)select\\s+\\*\\s+from\\s+([A-Z0-9_.]+)",
-            "template": "SELECT ${columns_or_placeholder} FROM ${table}",
-            "bindings": ["table","columns_or_placeholder"]
-          },
-          "autofix_safe": false
-        },
-        {
-          "id": "ORC-TABLE-OPTIONS",
-          "desc": "CREATE TABLE con COMPRESS, NOLOGGING y TABLESPACE explícito",
-          "pattern": "(?is)create\\s+table[\\s\\S]+?\\)\\s*(?!.*\\bCOMPRESS\\b)(?!.*\\bNOLOGGING\\b)(?!.*\\bTABLESPACE\\b)",
-          "severity": "error",
-          "explain": "Estandariza opciones físicas.",
-          "quote": "Las tablas deben declararse con COMPRESS, NOLOGGING y TABLESPACE.",
-          "cite": "Oracle » Configuraciones de Tablas",
-          "fix": {
-            "type": "ensure_clause",
-            "locator": "(?is)(create\\s+table[\\s\\S]+?\\))",
-            "template": "${block}\nCOMPRESS NOLOGGING\nTABLESPACE ${tablespace}",
-            "bindings": ["tablespace"]
-          },
-          "autofix_safe": true
-        },
-        {
-          "id": "ORC-PK-EXISTS",
-          "desc": "La tabla debe tener PRIMARY KEY",
-          "pattern": "(?is)create\\s+table[\\s\\S]+?;[\\s\\S]*?primary\\s+key",
-          "must_match": true,
-          "severity": "error",
-          "explain": "Garantiza integridad y acceso eficiente.",
-          "quote": "Cada tabla debe contar con una clave primaria definida.",
-          "cite": "Oracle » Restricciones PK",
-          "fix": {
-            "type": "insert_after",
-            "locator": "(?is)(create\\s+table[\\s\\S]+?;)",
-            "template": "ALTER TABLE ${schema}.${table} ADD CONSTRAINT PK_${table} PRIMARY KEY (${pk_cols});",
-            "bindings": ["schema","table","pk_cols"]
-          },
-          "autofix_safe": false
-        },
-        {
-          "id": "ORC-IDX-NAME",
-          "desc": "Índices/PK con prefijo PK_/IDX_",
-          "pattern": "(?i)create\\s+unique\\s+index\\s+(?!PK_|IDX_)",
-          "severity": "warn",
-          "explain": "Homologa nomenclatura de objetos.",
-          "quote": "Los índices y PK deben nombrarse con prefijos PK_ e IDX_.",
-          "cite": "Oracle » Nomenclatura de Índices",
-          "fix": {
-            "type": "rename_suggest",
-            "locator": "(?is)create\\s+unique\\s+index\\s+(\\w+)\\s+on\\s+(?:(\\w+)\\.)?(\\w+)\\s*\\(([^)]+)\\)",
-            "template": "Sugerido: PK_${table}  o  IDX_${table}_${firstcol}",
-            "bindings": ["table","firstcol"]
-          },
-          "autofix_safe": false
-        },
-        {
-          "id": "ORC-PART-NAME",
-          "desc": "Partición debe iniciar con PT_ y cumplir longitud/caracteres",
-          "pattern": "(?i)\\bpartition\\s+(?!PT_[A-Z0-9_]{1,27}\\b)([A-Z0-9_]{1,30})\\b",
-          "severity": "error",
-          "explain": "Estandariza la nomenclatura de particiones.",
-          "quote": "El nombre debe tener de 4 a 30 caracteres; A–Z, 0–9 y _. Debe iniciar con PT_ seguido de la columna de partición o su función.",
-          "cite": "Oracle » Nomenclatura de Particiones",
-          "fix": {
-            "type": "replace_token",
-            "locator": "(?i)(\\bpartition\\s+)([A-Z0-9_]{1,30})\\b",
-            "template": "${g1}PT_${partcol}_${suffix}",
-            "bindings": ["partcol","suffix"],
-            "apply": "global",
-            "multiple": true
-          },
-          "autofix_safe": false
-        },
-        {
-          "id": "ORC-GRANT-FQN",
-          "desc": "GRANT ON debe usar objeto calificado <SCHEMA>.<OBJETO>",
-          "pattern": "(?i)\\bgrant\\s+(?:select|insert|update|delete|references|execute)(?:\\s*,\\s*(?:select|insert|update|delete|references|execute))*\\s+on\\s+(?!\\w+\\.)\\b([A-Z0-9_]+)\\b\\s+to\\s+([A-Z0-9_]+)",
-          "severity": "error",
-          "explain": "Califica objetos con esquema para evitar ambigüedad.",
-          "quote": "Toda referencia a objetos debe estar completamente calificada con su esquema.",
-          "cite": "Oracle » Esquemas y calificación de objetos",
-          "fix": {
-            "type": "replace",
-            "locator": "(?i)(\\bgrant\\s+)([a-z,\\s]+)(\\s+on\\s+)([A-Z0-9_]+)(\\s+to\\s+)([A-Z0-9_]+)",
-            "template": "${g1}${g2}${g3}${schema}.${g4}${g5}${g6}",
-            "bindings": ["schema"]
-          },
-          "autofix_safe": false
-        }
-      ]
+      "id": "BAN_NOLOGGING",
+      "description": "Prohíbe NOLOGGING en DDL.",
+      "type": "regex_forbidden",
+      "pattern": "\\bNOLOGGING\\b",
+      "flags": "is",
+      "scope": ["ddl.table","ddl.index"],
+      "severity": "BLOCKER",
+      "message": "NOLOGGING prohibido en PROD. Usa LOGGING.",
+      "autofix": { "type": "replace", "search": "\\bNOLOGGING\\b", "replace": "LOGGING" }
     },
     {
-      "namespace": "powershell",
-      "applies_to": ["*.ps1","*.txt"],
-      "rules": [
-        {
-          "id": "PS-CLEAR-HOST-FIRST",
-          "desc": "Clear-Host al inicio",
-          "pattern": "(?is)\\A\\s*clear-host\\b",
-          "must_match": true,
-          "severity": "error",
-          "explain": "Estructura estándar de script.",
-          "quote": "Todo script inicia con Clear-Host.",
-          "cite": "PowerShell » Estructura",
-          "fix": { "type": "insert_before", "locator": "\\A", "template": "Clear-Host\\n" },
-          "autofix_safe": true
-        }
-      ]
+      "id": "ENFORCE_TABLESPACE_TABLES",
+      "description": "Tablas al TBS de datos aprobado.",
+      "type": "requires_when",
+      "when": "CREATE\\s+TABLE\\b",
+      "require": "TABLESPACE\\s+(TBS_DESP_01_DAT)\\b",
+      "flags": "is",
+      "scope": ["ddl.table"],
+      "severity": "BLOCKER",
+      "message": "TABLESPACE de tablas debe ser TBS_DESP_01_DAT."
     },
     {
-      "namespace": "ipc",
-      "applies_to": ["*.prm","*.ipc.txt","*.wf.txt","*.txt"],
-      "rules": [
-        {
-          "id": "IPC-PRM-HEADER",
-          "desc": ".prm con [Global] y variables $$PW_/$$PM_",
-          "pattern": "(?i)\\[Global\\]|\\$\\$PW_|\\$\\$PM_",
-          "must_match": true,
-          "severity": "error",
-          "explain": "Estructura de parámetros requerida.",
-          "quote": "El archivo .prm debe tener sección [Global] y variables $$PW_/$$PM_.",
-          "cite": "IPC » Parámetros",
-          "fix": { "type": "insert_after", "locator": "\\A", "template": "[Global]\\n$$PM_<VAR>=<VAL>\\n" },
-          "autofix_safe": false
-        }
-      ]
+      "id": "ENFORCE_TABLESPACE_INDEXES",
+      "description": "Índices al TBS de índices aprobado.",
+      "type": "requires_when",
+      "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\b",
+      "require": "TABLESPACE\\s+(TBS_DESP_01_IDX)\\b",
+      "flags": "is",
+      "scope": ["ddl.index"],
+      "severity": "BLOCKER",
+      "message": "TABLESPACE de índices debe ser TBS_DESP_01_IDX."
     },
     {
-      "namespace": "xml",
-      "applies_to": ["*.xml"],
-      "rules": [
+      "id": "BAN_COMPRESS_TABLE",
+      "description": "COMPRESS en tablas requiere waiver.",
+      "type": "regex_forbidden",
+      "pattern": "\\bCREATE\\s+TABLE\\b[\\s\\S]*?\\bCOMPRESS\\b",
+      "flags": "is",
+      "scope": ["ddl.table"],
+      "severity": "MAJOR",
+      "message": "COMPRESS en tablas requiere excepción documentada."
+    },
+    {
+      "id": "REQUIRE_PK_NAMING",
+      "description": "PRIMARY KEY con prefijo PK_.",
+      "type": "requires_when",
+      "when": "PRIMARY\\s+KEY\\b",
+      "require": "CONSTRAINT\\s+PK_[A-Z0-9_]+\\b",
+      "flags": "is",
+      "scope": ["ddl.table"],
+      "severity": "MAJOR",
+      "message": "Usa nombre de constraint PRIMARY KEY con prefijo PK_."
+    },
+    {
+      "id": "REQUIRE_UK_NAMING",
+      "description": "UNIQUE KEY con prefijo UK_.",
+      "type": "requires_when",
+      "when": "ADD\\s+CONSTRAINT\\s+[A-Z0-9_]+\\s+UNIQUE\\b",
+      "require": "ADD\\s+CONSTRAINT\\s+UK_[A-Z0-9_]+\\s+UNIQUE\\b",
+      "flags": "is",
+      "scope": ["ddl.table"],
+      "severity": "MINOR",
+      "message": "Usa nombre de constraint UNIQUE con prefijo UK_."
+    },
+    {
+      "id": "REQUIRE_INDEX_NAMING",
+      "description": "Índices deben iniciar con IDX_ o PK_.",
+      "type": "regex_forbidden",
+      "pattern": "CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+(?![A-Z0-9_]+\\.(?:IDX_|PK_))[A-Z0-9_.]+",
+      "flags": "is",
+      "scope": ["ddl.index"],
+      "severity": "MAJOR",
+      "message": "Nombra índices como IDX_* (o PK_* si soporta PK)."
+    },
+    {
+      "id": "REQUIRE_SCHEMA_QUALIFIED_DDL",
+      "description": "DDL calificado con esquema permitido o placeholder.",
+      "type": "regex_forbidden",
+      "pattern": "CREATE\\s+(?:TABLE|VIEW|SEQUENCE|TRIGGER|INDEX)\\s+(?!(?:CPPGS|AUTEAM|SCSAI|SCBIOCATCH|AUDOTS|USREXTRACCIONES|USRRETAIL|USROTS|USRDEVIPC|<SCHEMA>)\\.)[A-Z0-9_]+",
+      "flags": "is",
+      "scope": ["ddl.table","ddl.index","ddl.other"],
+      "severity": "MAJOR",
+      "message": "Califica objetos con esquema permitido (p.ej., <SCHEMA>.TABLA)."
+    },
+    {
+      "id": "BAN_SELECT_STAR",
+      "description": "Prohíbe SELECT *.",
+      "type": "regex_forbidden",
+      "pattern": "\\bSELECT\\s*\\*\\b",
+      "flags": "is",
+      "scope": ["dml","plsql"],
+      "severity": "MAJOR",
+      "message": "No uses SELECT *. Lista columnas explícitas."
+    },
+    {
+      "id": "BAN_PARALLEL_HINTS",
+      "description": "Prohíbe paralelismo forzado.",
+      "type": "regex_forbidden_any",
+      "patterns": ["/\\*\\+\\s*PARALLEL\\b","\\bALTER\\s+SESSION\\s+.*\\bPARALLEL\\b"],
+      "flags": "is",
+      "scope": ["dml","plsql","session"],
+      "severity": "BLOCKER",
+      "message": "Paralelismo forzado no permitido en apps OLTP."
+    },
+    {
+      "id": "REQUIRE_TABLE_COMMENT",
+      "description": "Cada tabla nueva debe tener COMMENT ON TABLE.",
+      "type": "requires_when_group",
+      "group": [
         {
-          "id": "XML-PART-NAME",
-          "desc": "Partition name debe iniciar con PT_ y cumplir longitud/caracteres",
-          "pattern": "(?i)<partition\\s+name=\"(?!PT_[A-Z0-9_]{1,27}\\b)([A-Z0-9_]{1,30})\"",
-          "severity": "error",
-          "explain": "Estandariza nomenclatura de particiones en XML.",
-          "quote": "El nombre debe tener de 4 a 30 caracteres; A–Z, 0–9 y _. Debe iniciar con PT_ seguido de la columna de partición o su función.",
-          "cite": "Oracle » Nomenclatura de Particiones",
-          "fix": {
-            "type": "replace_token",
-            "locator": "(?i)(<partition\\s+name=\")([A-Z0-9_]{1,30})(\")",
-            "template": "${g1}PT_${partcol}_${suffix}${g3}",
-            "bindings": ["partcol","suffix"],
-            "apply": "global",
-            "multiple": true
-          },
-          "autofix_safe": false
+          "when": "CREATE\\s+TABLE\\s+((?:CPPGS|AUTEAM|SCSAI|SCBIOCATCH|AUDOTS|USREXTRACCIONES|USRRETAIL|USROTS|USRDEVIPC|<SCHEMA>)\\.[A-Z0-9_]+)",
+          "require_template": "COMMENT\\s+ON\\s+TABLE\\s+{0}\\s+IS\\s+'.+?';"
         }
-      ]
+      ],
+      "flags": "is",
+      "scope": ["ddl.table"],
+      "severity": "MINOR",
+      "message": "Agrega COMMENT ON TABLE con descripción."
+    },
+    {
+      "id": "BAN_ORDER_BY_POSITION",
+      "description": "Prohíbe ORDER BY por número.",
+      "type": "regex_forbidden",
+      "pattern": "\\bORDER\\s+BY\\s+\\d+(\\s*,\\s*\\d+)*\\b",
+      "flags": "is",
+      "severity": "BLOCKER",
+      "message": "Usa columnas explícitas en ORDER BY."
+    },
+    {
+      "id": "REQUIRE_WHERE_UPDATE",
+      "description": "UPDATE debe tener WHERE.",
+      "type": "requires_when",
+      "when": "\\bUPDATE\\b",
+      "require": "\\bWHERE\\b",
+      "flags": "is",
+      "severity": "BLOCKER",
+      "message": "Evita updates masivos sin WHERE."
+    },
+    {
+      "id": "REQUIRE_WHERE_DELETE",
+      "description": "DELETE debe tener WHERE.",
+      "type": "requires_when",
+      "when": "\\bDELETE\\b",
+      "require": "\\bWHERE\\b",
+      "flags": "is",
+      "severity": "BLOCKER",
+      "message": "Evita deletes masivos sin WHERE."
+    },
+    {
+      "id": "BAN_INSERT_NO_COLUMN_LIST",
+      "description": "INSERT sin lista de columnas.",
+      "type": "regex_forbidden_any",
+      "patterns": ["\\bINSERT\\s+INTO\\s+[A-Z0-9_.]+\\s+VALUES\\b","\\bINSERT\\s+INTO\\s+[A-Z0-9_.]+\\s+SELECT\\b"],
+      "flags": "is",
+      "severity": "BLOCKER",
+      "message": "Incluye lista de columnas en INSERT."
+    },
+    {
+      "id": "BAN_WHEN_OTHERS_NULL",
+      "description": "WHEN OTHERS THEN NULL.",
+      "type": "regex_forbidden",
+      "pattern": "\\bWHEN\\s+OTHERS\\s+THEN\\s+NULL\\b",
+      "flags": "is",
+      "severity": "BLOCKER",
+      "message": "Registra y/o propaga el error; no lo silencies."
+    },
+    {
+      "id": "REQUIRE_AUDIT_PKG_IN_SP",
+      "description": "Bitácora corporativa en SP/PKG.",
+      "type": "requires_when",
+      "when": "CREATE\\s+OR\\s+REPLACE\\s+(PROCEDURE|PACKAGE)\\b",
+      "require": "\\bPKG_BITACORA_PROCESO\\.",
+      "flags": "is",
+      "severity": "BLOCKER",
+      "message": "Llama a PKG_BITACORA_PROCESO en inicio/fin y on-error."
+    },
+    {
+      "id": "ENFORCE_TABLE_NAMING",
+      "description": "Prefijos de tabla TBL_/TSTG_.",
+      "type": "regex_forbidden",
+      "pattern": "CREATE\\s+TABLE\\s+(?:[A-Z0-9_]+\\.)?(?!TBL_|TSTG_)[A-Z0-9_]+",
+      "flags": "is",
+      "severity": "MAJOR",
+      "message": "Usa prefijos TBL_ o TSTG_."
+    },
+    {
+      "id": "ENFORCE_PACKAGE_NAMING",
+      "description": "Package con PKG_.",
+      "type": "regex_forbidden",
+      "pattern": "CREATE\\s+OR\\s+REPLACE\\s+PACKAGE\\s+(?:[A-Z0-9_]+\\.)?(?!PKG_)[A-Z0-9_]+",
+      "flags": "is",
+      "severity": "MAJOR",
+      "message": "Usa prefijo PKG_."
+    },
+    {
+      "id": "ENFORCE_PROC_NAMING",
+      "description": "Procedure con SP_.",
+      "type": "regex_forbidden",
+      "pattern": "CREATE\\s+OR\\s+REPLACE\\s+PROCEDURE\\s+(?:[A-Z0-9_]+\\.)?(?!SP_)[A-Z0-9_]+",
+      "flags": "is",
+      "severity": "MINOR",
+      "message": "Usa prefijo SP_."
+    },
+    {
+      "id": "ENFORCE_FUNC_NAMING",
+      "description": "Function con F_.",
+      "type": "regex_forbidden",
+      "pattern": "CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+(?:[A-Z0-9_]+\\.)?(?!F_)[A-Z0-9_]+",
+      "flags": "is",
+      "severity": "MINOR",
+      "message": "Usa prefijo F_."
+    },
+    {
+      "id": "BAN_LOOSE_ATTRIBUTES",
+      "description": "Atributos DDL sueltos.",
+      "type": "regex_forbidden",
+      "pattern": "^(?!.*\\b(CREATE|ALTER)\\b).*(\\bCOMPRESS\\b|\\bNOLOGGING\\b|\\bTABLESPACE\\s+[A-Z0-9_]+)",
+      "flags": "im",
+      "severity": "BLOCKER",
+      "message": "COMPRESS/NOLOGGING/TABLESPACE solo dentro de CREATE/ALTER."
+    },
+    {
+      "id": "REQUIRE_COMPRESS_FOR_MULTI_COL_INDEX",
+      "description": "Índice multicolumna requiere COMPRESS n (n=cols−1).",
+      "type": "requires_when",
+      "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX[\\s\\S]*?\\([\\s\\S]*?,[\\s\\S]*?\\)",
+      "require": "\\bCOMPRESS\\s+\\d+\\b",
+      "flags": "is",
+      "scope": ["ddl.index"],
+      "severity": "BLOCKER",
+      "message": "Especifica COMPRESS n (por ejemplo, COMPRESS 2 para 3 columnas)."
+    },
+    {
+      "id": "ORC-REQUIRE-COMMIT-AFTER-DML",
+      "description": "Solo exigir COMMIT cuando hay transacción explícita con DML.",
+      "type": "requires_when_group",
+      "group": [
+        { "when": "BEGIN\\s+TRANSACTION\\b[\\s\\S]*?(INSERT|UPDATE|DELETE|MERGE)\\b",
+          "require_template": "COMMIT\\b" }
+      ],
+      "flags": "is",
+      "scope": ["session","dml"],
+      "severity": "MAJOR",
+      "message": "Falta COMMIT tras transacción con DML."
+    },
+    {
+      "id": "ORC-GRANT-NO-COMMIT",
+      "description": "No exigir COMMIT para GRANT/DDL.",
+      "type": "regex_forbidden",
+      "pattern": "BEGIN\\s+TRANSACTION\\b[\\s\\S]*?GRANT\\b[\\s\\S]*?COMMIT\\b",
+      "flags": "is",
+      "scope": ["session"],
+      "severity": "MINOR",
+      "message": "No añadas COMMIT por GRANT; los DDL ya hacen commit implícito."
+    },
+    {
+      "id": "ORC-TSQL-BEGIN-TRANSACTION",
+      "description": "BEGIN TRANSACTION es T-SQL; no Oracle.",
+      "type": "regex_forbidden",
+      "pattern": "\\bBEGIN\\s+TRANSACTION\\b",
+      "flags": "is",
+      "scope": ["session"],
+      "severity": "MAJOR",
+      "message": "En Oracle usa SET TRANSACTION/SAVEPOINT; evita 'BEGIN TRANSACTION'."
+    },
+    {
+      "id": "GRANT_DEV_RECIPIENTS_ONLY",
+      "description": "Destinatarios de GRANT limitados a esquemas de desarrollo.",
+      "type": "regex_forbidden",
+      "pattern": "\\bGRANT\\b[\\s\\S]*?\\bTO\\b\\s+(?!USREXTRACCIONES\\b|USRRETAIL\\b|USROTS\\b|USRDEVIPC\\b)[A-Z0-9_]+\\b",
+      "flags": "is",
+      "scope": ["dcl"],
+      "severity": "MAJOR",
+      "message": "Solo se permiten GRANT a {USREXTRACCIONES, USRRETAIL, USROTS, USRDEVIPC}."
     }
   ]
 }
-

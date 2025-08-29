@@ -4,10 +4,10 @@
   "mode": "static_code_scan",
   "owner_schemas": ["CPPGS"],
   "approved_tablespaces": { "tables": ["TBS_DESP_01_DAT"], "indexes": ["TBS_DESP_01_IDX"] },
-  "reporting": { "fail_on_severity": ["BLOCKER"], "score_weights": { "BLOCKER": 100, "MAJOR": 20, "MINOR": 5 }, "approval_max_score": 20, "verdict_labels": { "pass": "CUMPLE", "fail": "NO CUMPLE" } },
-  "file_match": ["**/*.sql","**/*.ddl","**/*.pkg","**/*.pks","**/*.pkb","**/*.txt"],
+  "reporting": { "fail_on_severity": ["BLOCKER"], "score_weights": { "BLOCKER": 100, "MAJOR": 20, "MINOR": 5 }, "  "file_match": ["**/*.sql","**/*.ddl","**/*.pkg","**/*.pks","**/*.pkb","**/*.txt"],
   "rules": [
-    { "id": "BAN_NOLOGGING", "description": "Prohíbe NOLOGGING en DDL.", "type": "regex_forbidden", "pattern":
+    { "id": "BAN_NOLOGGING", "description": "Prohíbe NOLOGGING en DDL.", "type": "regex_forbidden", "pattern": "\\bNOLOGGING\\b", "flags": "is", "scope": ["ddl.table","ddl.index"], "severity": "BLOCKER", "message": "NOLOGGING prohibido en PROD. Usa LOGGING.", "autofix": { "type": "replace", "search": "\\bNOLOGGING\\b", "replace": "LOGGING" } },
+
     { "id": "ENFORCE_TABLESPACE_TABLES", "description": "Tablas al TBS de datos aprobado.", "type": "requires_when", "when": "CREATE\\s+TABLE\\b", "require": "TABLESPACE\\s+(TBS_DESP_01_DAT)\\b", "flags": "is", "scope": ["ddl.table"], "severity": "BLOCKER", "message": "TABLESPACE de tablas debe ser TBS_DESP_01_DAT." },
     { "id": "BAN_NON_APPROVED_TABLESPACE_TABLE", "description": "Bloquea TABLESPACE no aprobado en tablas.", "type": "regex_forbidden", "pattern": "\\bCREATE\\s+TABLE\\b[\\s\\S]*?TABLESPACE\\s+(?!TBS_DESP_01_DAT\\b)[A-Z0-9_]+", "flags": "is", "scope": ["ddl.table"], "severity": "BLOCKER", "message": "TABLESPACE no aprobado en tabla." },
 

@@ -1,0 +1,25 @@
+﻿[
+  {"id":"ORA-INSERT-NOCOLS-SELECT","level":"error","message":"INSERT sin lista de columnas (INSERT ... SELECT).","regex":"(?is)\\binsert\\s+into\\s+[^\\(\\s;]+\\s+(?=select\\b)"},
+  {"id":"ORA-INSERT-NOCOLS-VALUES","level":"error","message":"INSERT sin lista de columnas (INSERT ... VALUES).","regex":"(?is)\\binsert\\s+into\\s+[^\\(\\s;]+\\s*values\\s*\\("},
+  {"id":"ORA-SCHEMA-NOT-QUALIFIED","level":"error","message":"Objeto sin schema productivo en INSERT.","regex":"(?im)^\\s*insert\\s+into\\s+(?!\"?[A-Z0-9_]+\"?\\.)\"?[A-Z0-9_]+\"?"},
+  {"id":"ORA-SELECT-STAR","level":"error","message":"SELECT * prohibido.","regex":"(?is)\\bselect\\s*\\*\\s*from\\b"},
+  {"id":"ORA-ORDER-BY-NUMPOS","level":"error","message":"ORDER BY por posición numérica prohibido.","regex":"(?is)order\\s+by\\s+\\d+(\\s*(,|asc|desc|nulls\\s+(first|last))\\s*\\d+)*"},
+  {"id":"ORA-SEQ-MAXPLUSONE","level":"error","message":"Uso de MAX(col)+1 para IDs. Usa SEQUENCE/IDENTITY.","regex":"(?is)max\\s*\\(\\s*[A-Z0-9_\"\\.]+\\s*\\)\\s*\\+\\s*1"},
+  {"id":"ORA-WHEN-OTHERS-NO-RAISE","level":"error","message":"WHEN OTHERS sin RAISE_APPLICATION_ERROR.","regex":"(?is)when\\s+others\\s+then(?:(?!raise_application_error).)*?end\\s*;"},
+  {"id":"ORA-BITACORA-NONSTD","level":"error","message":"Bitácora no estándar. Usa CPPGS.TBL_BITACORA_PROCESO(_DETA).","regex":"(?i)\\busrextracciones\\.tat_log_procesos\\b"},
+  {"id":"ORA-DATE-STRING-LITERAL","level":"warn","message":"Literal de fecha 'YYYYMMDD' como texto. Usa TO_DATE.","regex":"(?i)'\\d{8}'\\s+as\\s+f(h|echa)"},
+  {"id":"ORA-TIME-STRING-LITERAL","level":"warn","message":"Literal de hora 'HH24:MI:SS' como texto. Usa TO_TIMESTAMP o INTERVAL.","regex":"(?i)'\\d{2}:\\d{2}:\\d{2}'(?!\\s*')"},
+  {"id":"ORA-NAMING-PKG","level":"error","message":"Package debe iniciar con PKG_.","regex":"(?im)^\\s*create\\s+or\\s+replace\\s+package\\s+(?!PKG_)[A-Z0-9_]+"},
+  {"id":"ORA-NAMING-SP","level":"error","message":"Procedure debe iniciar con SP_.","regex":"(?im)^\\s*create\\s+or\\s+replace\\s+procedure\\s+(?!SP_)[A-Z0-9_]+"},
+  {"id":"ORA-NAMING-FUNC","level":"error","message":"Function debe iniciar con F_.","regex":"(?im)^\\s*create\\s+or\\s+replace\\s+function\\s+(?!F_)[A-Z0-9_]+"},
+
+  {"id":"IPC-WF-NAME","level":"error","message":"Workflow debe iniciar con WF_.","regex":"(?im)^\\[.+?\\.WF:WF_[A-Z0-9_]+(\\.|\\])"},
+  {"id":"IPC-WL-NAME","level":"error","message":"Worklet debe iniciar con WL_.","regex":"(?im)^\\[.+?\\.WL:WL_[A-Z0-9_]+(\\.|\\])"},
+  {"id":"IPC-TRUNCATE-TARGET","level":"error","message":"Prohibido usar Truncate target table option.","regex":"(?i)truncate\\s+target\\s+table"},
+  {"id":"IPC-SESSION-STOP-ON-ERRORS","level":"warn","message":"Asegura Stop on errors = 1.","regex":"(?i)stop\\s+on\\s+errors\\s*=\\s*(?!1)\\d+"},
+  {"id":"IPC-SESSION-SQL-QUERY","level":"warn","message":"Evitar 'Sql Query' en sesiones.","regex":"(?i)\\bsql\\s+query\\b"},
+
+  {"id":"PS-CLEAR-HOST-FIRST","level":"error","message":"Debe iniciar con Clear-Host.","regex":"(?s)\\A(?!\\s*Clear-Host)"},
+  {"id":"PS-NO-SUBSHELL","level":"error","message":"Prohibido shells secundarios.","regex":"(?i)\\b(Start-Process|cmd\\.exe|powershell\\.exe\\s+-)\\b"},
+  {"id":"PS-PMCMD-ONLY-MAIN","level":"error","message":"pmcmd solo en script principal.","regex":"(?i)\\bpmcmd\\b"}
+]

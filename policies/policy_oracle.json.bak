@@ -1,0 +1,48 @@
+﻿{
+    "policy_version":  "1.1.0",
+    "engine":  "oracle-19c",
+    "mode":  "static_code_scan",
+    "file_glob":  [
+                      "**/*.sql",
+                      "**/*.pkb",
+                      "**/*.pks",
+                      "**/*.pls",
+                      "**/*.txt"
+                  ],
+    "forbid_select_star":  true,
+    "forbid_keywords":  [
+                            "NOLOGGING",
+                            " PARALLEL"
+                        ],
+    "require_insert_column_list":  true,
+    "require_exception_prefix":  "EXC_",
+    "require_bitacora_calls":  {
+                                   "start":  "PKG_BITACORA_PROCESO.SP_BITACORA_INICIO",
+                                   "finish_ok":  "PKG_BITACORA_PROCESO.SP_BITACORA_FIN",
+                                   "finish_err":  "PKG_BITACORA_PROCESO.SP_BITACORA_ERROR_FIN"
+                               },
+    "doc_refs":  {
+                     "INSERT-COLS":  {
+                                         "page":  "16â€“17",
+                                         "section":  "Columnas en SELECT e INSERT"
+                                     },
+                     "EXC-PREFIX":  {
+                                        "page":  "10",
+                                        "section":  "Excepciones EXC_"
+                                    },
+                     "BITACORA":  {
+                                      "page":  "10",
+                                      "section":  "BitÃ¡cora de Proceso"
+                                  },
+                     "SELECT-STAR":  {
+                                         "page":  "16â€“17",
+                                         "section":  "Columnas en SELECT e INSERT"
+                                     }
+                 },
+    "remediation_notes":  {
+                              "INSERT-COLS":  "Declarar la lista de columnas destino antes de VALUES.",
+                              "EXC-PREFIX":  "Prefijar la excepciÃ³n con EXC_ y usar ese nombre en RAISE y WHEN.",
+                              "BITACORA":  "Incluir inicio, fin y fin con error del paquete de bitÃ¡cora.",
+                              "SELECT-STAR":  "Enumerar columnas explÃ­citas en SELECT."
+                          }
+}

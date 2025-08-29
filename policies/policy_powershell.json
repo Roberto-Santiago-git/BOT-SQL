@@ -1,0 +1,4 @@
+﻿[
+  {"id":"PS-CLEAR-HOST-FIRST","level":"error","message":"El script debe iniciar con Clear-Host.","regex":"(?s)\\A(?!\\s*Clear-Host)"},
+  {"id":"PS-WRITE-HOST","level":"warn","message":"Evitar Write-Host en productivo.","regex":"(?i)\\bWrite-Host\\b"}
+]

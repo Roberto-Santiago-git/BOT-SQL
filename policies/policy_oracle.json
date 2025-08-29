@@ -1,0 +1,10 @@
+﻿[
+  {"id":"ORA-INSERT-NOCOLS-SELECT","level":"error","message":"INSERT sin lista de columnas (INSERT ... SELECT).","regex":"(?is)\\binsert\\s+into\\s+[^\\(\\s;]+\\s+(?=select\\b)"},
+  {"id":"ORA-INSERT-NOCOLS-VALUES","level":"error","message":"INSERT sin lista de columnas (INSERT ... VALUES).","regex":"(?is)\\binsert\\s+into\\s+[^\\(\\s;]+\\s*values\\s*\\("},
+  {"id":"ORA-SCHEMA-NOT-QUALIFIED","level":"error","message":"Objeto sin schema calificado en INSERT.","regex":"(?im)^\\s*insert\\s+into\\s+(?!\"?[A-Z0-9_]+\"?\\.)\"?[A-Z0-9_]+\"?"},
+  {"id":"ORA-SEQ-MAXPLUSONE","level":"error","message":"Uso de MAX(col)+1 para IDs. Usa SEQUENCE/IDENTITY.","regex":"(?is)max\\s*\\(\\s*[A-Z0-9_\"\\.]+\\s*\\)\\s*\\+\\s*1"},
+  {"id":"ORA-SELECT-STAR","level":"error","message":"SELECT * prohibido.","regex":"(?is)\\bselect\\s*\\*\\s*from\\b"},
+  {"id":"ORA-ORDER-BY-NUMPOS","level":"error","message":"ORDER BY por posición numérica prohibido.","regex":"(?is)order\\s+by\\s+\\d+(\\s*(,|asc|desc|nulls\\s+(first|last))\\s*\\d+)*"},
+  {"id":"ORA-DATE-STRING-LITERAL","level":"warn","message":"Literal de fecha 'YYYYMMDD' como texto. Usa TO_DATE.","regex":"(?i)'\\d{8}'\\s+as\\s+f(h|echa)"},
+  {"id":"ORA-TIME-STRING-LITERAL","level":"warn","message":"Literal de hora 'HH24:MI:SS' como texto. Usa TO_TIMESTAMP/INTERVAL.","regex":"(?i)'\\d{2}:\\d{2}:\\d{2}'(?!\\s*')"}
+]

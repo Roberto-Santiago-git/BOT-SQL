@@ -1,0 +1,3 @@
+﻿[
+  {"id":"IPC-TRUNCATE-TARGET","level":"error","message":"Prohibido 'Truncate target table'. Use SP.","regex":"(?i)truncate\\s+target\\s+table"}
+]

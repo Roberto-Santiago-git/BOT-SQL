@@ -1,5 +1,5 @@
 ﻿{
-  "policy_version": "1.0.3",
+  "policy_version": "1.0.4",
   "engine": "oracle-19c",
   "mode": "static_code_scan",
   "owner_schemas": ["CPPGS"],
@@ -21,11 +21,11 @@
       "type": "regex_forbidden",
       "pattern": "\\bNOLOGGING\\b",
       "flags": "is",
-      "scope": ["ddl.table","ddl.index"],
-      "severity": "BLOCKER",
+      "scope": ["dd      "severity": "BLOCKER",
       "message": "NOLOGGING prohibido en PROD. Usa LOGGING.",
       "autofix": { "type": "replace", "search": "\\bNOLOGGING\\b", "replace": "LOGGING" }
     },
+
     {
       "id": "ENFORCE_TABLESPACE_TABLES",
       "description": "Tablas al TBS de datos aprobado.",
@@ -47,6 +47,7 @@
       "severity": "BLOCKER",
       "message": "TABLESPACE no aprobado en tabla."
     },
+
     {
       "id": "ENFORCE_TABLESPACE_INDEXES",
       "description": "Índices al TBS de índices aprobado.",
@@ -68,6 +69,7 @@
       "severity": "BLOCKER",
       "message": "TABLESPACE no aprobado en índice."
     },
+
     {
       "id": "BAN_COMPRESS_TABLE",
       "description": "COMPRESS en tablas requiere waiver.",
@@ -78,6 +80,7 @@
       "severity": "MAJOR",
       "message": "COMPRESS en tablas requiere excepción documentada."
     },
+
     {
       "id": "REQUIRE_PK_NAMING",
       "description": "PRIMARY KEY con prefijo PK_.",
@@ -110,6 +113,7 @@
       "severity": "MAJOR",
       "message": "Nombra índices como IDX_* (o PK_* si soporta PK)."
     },
+
     {
       "id": "REQUIRE_SCHEMA_QUALIFIED_DDL",
       "description": "DDL calificado con esquema permitido o placeholder.",
@@ -120,9 +124,11 @@
       "severity": "MAJOR",
       "message": "Califica objetos con esquema permitido (p.ej., <SCHEMA>.TABLA)."
     },
+
     {
       "id": "BAN_SELECT_STAR",
-      "desc      "type": "regex_forbidden",
+      "description": "Prohíbe SELECT *.",
+      "type": "regex_forbidden",
       "pattern": "\\bSELECT\\s*\\*\\b",
       "flags": "is",
       "scope": ["dml","plsql"],
@@ -139,6 +145,7 @@
       "severity": "BLOCKER",
       "message": "Paralelismo forzado no permitido en apps OLTP."
     },
+
     {
       "id": "REQUIRE_TABLE_COMMENT",
       "description": "Cada tabla nueva debe tener COMMENT ON TABLE.",
@@ -154,6 +161,7 @@
       "severity": "MINOR",
       "message": "Agrega COMMENT ON TABLE con descripción."
     },
+
     {
       "id": "BAN_ORDER_BY_POSITION",
       "description": "Prohíbe ORDER BY por número.",
@@ -192,6 +200,7 @@
       "severity": "BLOCKER",
       "message": "Incluye lista de columnas en INSERT."
     },
+
     {
       "id": "BAN_WHEN_OTHERS_NULL",
       "description": "WHEN OTHERS THEN NULL.",
@@ -211,6 +220,7 @@
       "severity": "BLOCKER",
       "message": "Llama a PKG_BITACORA_PROCESO en inicio/fin y on-error."
     },
+
     {
       "id": "ENFORCE_TABLE_NAMING",
       "description": "Prefijos de tabla TBL_/TSTG_.",
@@ -247,6 +257,7 @@
       "severity": "MINOR",
       "message": "Usa prefijo F_."
     },
+
     {
       "id": "BAN_LOOSE_ATTRIBUTES",
       "description": "Atributos DDL sueltos.",
@@ -256,6 +267,7 @@
       "severity": "BLOCKER",
       "message": "COMPRESS/NOLOGGING/TABLESPACE solo dentro de CREATE/ALTER."
     },
+
     {
       "id": "REQUIRE_COMPRESS_FOR_MULTI_COL_INDEX",
       "description": "Índice multicolumna requiere COMPRESS n (n=cols−1).",
@@ -276,6 +288,18 @@
       "severity": "BLOCKER",
       "message": "Índice compuesto sin COMPRESS n."
     },
+
+    {
+      "id": "BAN_GRANT_TO_UNAPPROVED_RECIPIENTS",
+      "description": "GRANT solo a esquemas de desarrollo permitidos.",
+      "type": "regex_forbidden",
+      "pattern": "\\bGRANT\\b[\\s\\S]*?\\bON\\b[\\s\\S]*?\\bTO\\s+(?!USREXTRACCIONES\\b|USRRETAIL\\b|USROTS\\b|USRDEVIPC\\b)[A-Z0-9_]+",
+      "flags": "is",
+      "scope": ["ddl.other","plsql","session"],
+      "severity": "BLOCKER",
+      "message": "Destinatario de GRANT no permitido para desarrollo."
+    },
+
     {
       "id": "ORC-REQUIRE-COMMIT-AFTER-DML",
       "description": "Solo exigir COMMIT cuando hay transacción explícita con DML.",

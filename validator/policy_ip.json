@@ -74,7 +74,8 @@
       "type": "regex_forbidden",
       "pattern": "\\bCREATE\\s+TABLE\\b[\\s\\S]*?\\bCOMPRESS\\b",
       "flags": "is",
-      "scope": ["ddl.tab      "severity": "MAJOR",
+      "scope": ["ddl.table"],
+      "severity": "MAJOR",
       "message": "COMPRESS en tablas requiere excepción documentada."
     },
     {
@@ -121,8 +122,7 @@
     },
     {
       "id": "BAN_SELECT_STAR",
-      "description": "Prohíbe SELECT *.",
-      "type": "regex_forbidden",
+      "desc      "type": "regex_forbidden",
       "pattern": "\\bSELECT\\s*\\*\\b",
       "flags": "is",
       "scope": ["dml","plsql"],

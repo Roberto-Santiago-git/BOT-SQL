@@ -114,7 +114,7 @@
       "id": "BAN_PARALLEL_HINTS",
       "description": "Prohíbe paralelismo forzado.",
       "type": "regex_forbidden_any",
-      "patterns": ["/\\*\\+\\s*PARALLEL\\b","\\bALTER\\s+SESSION\\s+.*\\bPARALLEL\\b"],
+      "patterns": ["\\/\\*\\+\\s*PARALLEL\\b","\\bALTER\\s+SESSION\\s+.*\\bPARALLEL\\b"],
       "flags": "is",
       "scope": ["dml","plsql","session"],
       "severity": "BLOCKER",
@@ -244,17 +244,18 @@
       "when": "CREATE\\s+(?:UNIQUE\\s+)?INDEX[\\s\\S]*?\\([\\s\\S]*?,[\\s\\S]*?\\)",
       "require": "\\bCOMPRESS\\s+\\d+\\b",
       "flags": "is",
-      "scope": ["ddl.index"],
       "severity": "BLOCKER",
-      "message": "Especifica COMPRESS n (por ejemplo, COMPRESS 2 para 3 columnas)."
+      "message": "Agrega COMPRESS n en índices compuestos."
     },
     {
       "id": "ORC-REQUIRE-COMMIT-AFTER-DML",
       "description": "Solo exigir COMMIT cuando hay transacción explícita con DML.",
       "type": "requires_when_group",
       "group": [
-        { "when": "BEGIN\\s+TRANSACTION\\b[\\s\\S]*?(INSERT|UPDATE|DELETE|MERGE)\\b",
-          "require_template": "COMMIT\\b" }
+        {
+          "when": "BEGIN\\s+TRANSACTION\\b[\\s\\S]*?(INSERT|UPDATE|DELETE|MERGE)\\b",
+          "require_template": "COMMIT\\b"
+        }
       ],
       "flags": "is",
       "scope": ["session","dml"],
@@ -283,11 +284,11 @@
     },
     {
       "id": "GRANT_DEV_RECIPIENTS_ONLY",
-      "description": "Destinatarios de GRANT limitados a esquemas de desarrollo.",
+      "description": "GRANT solo a esquemas de desarrollo permitidos.",
       "type": "regex_forbidden",
-      "pattern": "\\bGRANT\\b[\\s\\S]*?\\bTO\\b\\s+(?!USREXTRACCIONES\\b|USRRETAIL\\b|USROTS\\b|USRDEVIPC\\b)[A-Z0-9_]+\\b",
+      "pattern": "\\bGRANT\\b[\\s\\S]*?\\bTO\\s+(?!USREXTRACCIONES\\b|USRRETAIL\\b|USROTS\\b|USRDEVIPC\\b)[A-Z0-9_]+\\b",
       "flags": "is",
-      "scope": ["dcl"],
+      "scope": ["ddl.other","session"],
       "severity": "MAJOR",
       "message": "Solo se permiten GRANT a {USREXTRACCIONES, USRRETAIL, USROTS, USRDEVIPC}."
     }
